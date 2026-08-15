@@ -569,18 +569,27 @@ function ticketHtml(ticket) {
   const buyerName = ticket.buyer_name || ticket.buyerName || '';
   const buyerCpf = ticket.buyer_cpf || ticket.buyerCpf || '';
   const batchName = ticket.batch_name || ticket.batchName || '';
-  const contentId = `ingresso-${ticketId}@bailedamadrid`;
 
   return `
-    <div style="max-width:620px;margin:0 auto 26px;background:#090909;color:#fff;border:1px solid #2b2b2b;border-radius:18px;overflow:hidden;font-family:Arial,sans-serif;text-align:center">
-      <img src="cid:${escapeHtml(contentId)}" alt="Ingresso Baile da Madrid 2.0" style="display:block;width:100%;height:auto;border:0">
-      <div style="padding:18px 20px 22px">
-        <div style="font-size:12px;color:#999;letter-spacing:1px;text-transform:uppercase">${escapeHtml(batchName)}</div>
-        <p style="margin:9px 0 5px;font-size:16px"><strong>Nome: ${escapeHtml(buyerName)}</strong></p>
-        <p style="margin:5px 0;font-size:15px"><strong>CPF: ${formatCpfDisplay(buyerCpf)}</strong></p>
-        <p style="margin:13px 0 0;font-family:monospace;font-size:14px;word-break:break-all">Código do ingresso: ${escapeHtml(ticketId)}</p>
-        <p style="margin:14px 0 0;color:#aaa;font-size:12px">Apresente o QR Code correspondente na entrada.</p>
+    <div style="margin:0 auto 18px;padding:16px 18px;background:rgba(0,0,0,.78);border:1px solid rgba(255,255,255,.22);border-radius:14px;color:#fff;font-family:Arial,sans-serif;text-align:center">
+      <div style="font-size:11px;color:#ff4052;letter-spacing:2px;text-transform:uppercase;font-weight:800">
+        INGRESSO
       </div>
+      <div style="font-size:18px;font-weight:800;margin:7px 0 12px">
+        ${escapeHtml(batchName)}
+      </div>
+      <p style="margin:6px 0;font-size:15px">
+        <strong>Nome: ${escapeHtml(buyerName)}</strong>
+      </p>
+      <p style="margin:6px 0;font-size:14px">
+        <strong>CPF: ${formatCpfDisplay(buyerCpf)}</strong>
+      </p>
+      <p style="margin:10px 0 0;font-family:monospace;font-size:13px;word-break:break-all">
+        Código: ${escapeHtml(ticketId)}
+      </p>
+      <p style="margin:10px 0 0;color:#ddd;font-size:11px">
+        O QR Code deste ingresso está anexado a este e-mail.
+      </p>
     </div>
   `;
 }
@@ -591,51 +600,21 @@ function formatCpfDisplay(value) {
   return d.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
 }
 
-async function buildEmailPoster(ticket) {
+function emailPosterInlineAttachment() {
   if (!fs.existsSync(POSTER_PATH)) {
     throw new Error(`Imagem da festa não encontrada: ${POSTER_PATH}`);
   }
 
-  const qrBuffer = Buffer.from(String(ticket.qr_base64 || ''), 'base64');
-  if (!qrBuffer.length) {
-    throw new Error(`QR Code ausente para o ingresso ${ticket.ticket_id || '(sem código)'}.`);
-  }
+  const posterBase64 = fs
+    .readFileSync(POSTER_PATH)
+    .toString('base64');
 
-  const poster = sharp(POSTER_PATH);
-  const meta = await poster.metadata();
-  const posterWidth = Number(meta.width || 1087);
-  const posterHeight = Number(meta.height || 1536);
-
-  // QR pequeno, com fundo branco, no canto superior direito.
-  const qrSize = Math.max(180, Math.round(posterWidth * 0.20));
-
-  const qrPadded = await sharp(qrBuffer)
-    .resize(qrSize - 28, qrSize - 28, {
-      fit: 'contain',
-      kernel: sharp.kernel.nearest
-    })
-    .extend({
-      top: 14,
-      bottom: 14,
-      left: 14,
-      right: 14,
-      background: '#ffffff'
-    })
-    .png()
-    .toBuffer();
-
-  const qrX = Math.max(10, posterWidth - qrSize - 24);
-  const qrY = 24;
-
-  const out = await poster
-    .flatten({ background: '#ffffff' })
-    .composite([
-      { input: qrPadded, left: qrX, top: qrY }
-    ])
-    .png()
-    .toBuffer();
-
-  return out.toString('base64');
+  return {
+    filename: 'baile-da-madrid-background.png',
+    contentType: 'image/png',
+    content: posterBase64,
+    contentId: 'baile-madrid-background@bailedamadrid'
+  };
 }
 
 function ticketAttachments(tickets) {
@@ -793,34 +772,98 @@ async function fulfillLocked(orderId) {
 
     if (!freshOrder.emailSentAt) {
       try {
-        const inlinePosters = [];
-
-        for (const ticket of tickets) {
-          const ticketId = ticket.ticket_id || '';
-          const posterBase64 = await buildEmailPoster(ticket);
-          inlinePosters.push({
-            filename: `ingresso-${ticketId}.png`,
-            contentType: 'image/png',
-            content: posterBase64,
-            contentId: `ingresso-${ticketId}@bailedamadrid`
-          });
-        }
+        // A foto da festa é enviada como imagem inline (CID), para
+        // aparecer dentro do e-mail como plano de fundo.
+        // O único anexo visível ao usuário será o QR Code.
+        const inlinePosters = [
+          emailPosterInlineAttachment()
+        ];
 
         await sendGmail({
           to: freshOrder.buyer.email,
           subject: `Seu ingresso — ${EVENT_NAME}`,
           text:
-            `Pagamento aprovado. Seus ingressos para ${EVENT_NAME} estão neste e-mail. ` +
-            `O QR Code também está disponível como anexo.`,
+            `Olá, ${freshOrder.buyer.name}.\n\n` +
+            `Seu pagamento foi aprovado com sucesso e sua compra para ${EVENT_NAME} foi confirmada. ` +
+            `Estamos muito felizes em ter você com a gente. Seus ingressos e todas as informações principais ` +
+            `da sua compra estão neste e-mail.\n\n` +
+            `Guarde este e-mail até o dia do evento. O QR Code de cada ingresso foi enviado como arquivo anexo ` +
+            `e deverá ser apresentado na entrada para a validação do ingresso. Se você comprou mais de um ingresso, ` +
+            `confira os anexos e apresente o QR Code correspondente a cada ingresso.\n\n` +
+            `Pedido: ${freshOrder.orderId}\n` +
+            `Evento: ${EVENT_NAME}\n\n` +
+            `Obrigado pela compra e por fazer parte do Baile da Madrid 2.0. Nos vemos no evento!`,
           html: `
-            <div style="background:#070707;padding:18px 8px;font-family:Arial,sans-serif">
-              <div style="max-width:640px;margin:0 auto;color:#fff;text-align:center">
-                <div style="font-size:12px;letter-spacing:3px;color:#ff3a4a;font-weight:800">PAGAMENTO APROVADO</div>
-                <h1 style="margin:8px 0">${escapeHtml(EVENT_NAME)}</h1>
-                <p style="color:#bbb;margin:0 0 18px">Olá, ${escapeHtml(freshOrder.buyer.name)}. Guarde bem esse QR Code. O som não vai parar. 🔥🎶</p>
-                ${tickets.map(ticketHtml).join('')}
-                <p style="color:#777;font-size:11px">Pedido: ${escapeHtml(freshOrder.orderId)}</p>
-              </div>
+            <div style="margin:0;padding:0;background:#050505;font-family:Arial,sans-serif">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:collapse;background:#050505">
+                <tr>
+                  <td align="center" style="padding:0">
+
+                    <!--[if gte mso 9]>
+                    <v:rect xmlns:v="urn:schemas-microsoft-com:vml" fill="true" stroke="false" style="width:680px">
+                      <v:fill type="frame" src="cid:baile-madrid-background@bailedamadrid" color="#090909"/>
+                      <v:textbox inset="0,0,0,0">
+                    <![endif]-->
+
+                    <div
+                      style="
+                        width:100%;
+                        max-width:680px;
+                        min-height:900px;
+                        margin:0 auto;
+                        padding:28px 18px 34px;
+                        background-color:#090909;
+                        background-image:url('cid:baile-madrid-background@bailedamadrid');
+                        background-repeat:no-repeat;
+                        background-position:center top;
+                        background-size:100% auto;
+                        color:#fff;
+                        text-align:center;
+                      "
+                    >
+
+                      <div style="padding:14px 12px 16px;background:rgba(0,0,0,.68);border:1px solid rgba(255,255,255,.18);border-radius:16px;margin-bottom:18px">
+                        <div style="font-size:15px;letter-spacing:3px;color:#ff4052;font-weight:800">
+                          PAGAMENTO APROVADO
+                        </div>
+
+                        <h1 style="margin:7px 0 5px;font-size:36px;line-height:1.15;color:#fff">
+                          ${escapeHtml(EVENT_NAME)}
+                        </h1>
+
+                        <p style="margin:0;color:#fff;font-size:18px;line-height:1.65">
+                          Olá, ${escapeHtml(freshOrder.buyer.name)}.
+                          Seu ingresso está neste e-mail.
+                        </p>
+                      </div>
+
+                      ${tickets.map(ticketHtml).join('')}
+
+                      <div style="margin-top:18px;padding:20px 18px;background:rgba(0,0,0,.80);border-radius:14px;color:#fff;font-size:15px;line-height:1.75;text-align:left">
+                        <p style="margin:0 0 12px"><strong>Olá, ${escapeHtml(freshOrder.buyer.name)}!</strong></p>
+                        <p style="margin:0 0 12px">Seu pagamento foi aprovado com sucesso e sua compra para <strong>${escapeHtml(EVENT_NAME)}</strong> está confirmada.</p>
+                        <p style="margin:0 0 12px">Este e-mail contém as informações da sua compra e os seus ingressos. Recomendamos que você mantenha esta mensagem salva até o dia do evento para facilitar o acesso às informações.</p>
+                        <p style="margin:0 0 12px"><strong>Sobre os QR Codes:</strong> cada ingresso possui um QR Code próprio e ele foi enviado como <strong>arquivo anexo</strong> neste e-mail. Na entrada do evento, apresente o QR Code correspondente para que nossa equipe possa realizar a leitura e validar o seu ingresso.</p>
+                        <p style="margin:0 0 12px">Se você comprou mais de um ingresso, confira todos os anexos antes do evento e evite compartilhar os QR Codes com outras pessoas. Cada QR Code é destinado à validação do ingresso correspondente.</p>
+                        <p style="margin:0 0 12px">Caso tenha comprado este ingresso para outra pessoa, encaminhe o QR Code correto ao titular do ingresso e certifique-se de que ele esteja disponível no momento da entrada.</p>
+                        <p style="margin:0 0 12px"><strong>Pedido:</strong> ${escapeHtml(freshOrder.orderId)}</p>
+                        <p style="margin:0">Obrigado pela compra e por fazer parte do <strong>Baile da Madrid 2.0</strong>. Esperamos você no evento. Nos vemos lá!</p>
+                      </div>
+
+                      <p style="margin:22px 0 0;color:#eee;font-size:13px">
+                        Guarde este e-mail e os anexos dos QR Codes até o momento da entrada.
+                      </p>
+
+                    </div>
+
+                    <!--[if gte mso 9]>
+                      </v:textbox>
+                    </v:rect>
+                    <![endif]-->
+
+                  </td>
+                </tr>
+              </table>
             </div>
           `,
           inlineAttachments: inlinePosters,
@@ -1507,30 +1550,40 @@ app.post('/api/tickets/resend/:orderId', requireAdmin, async (req, res) => {
       throw new Error('Gmail API não configurada.');
     }
 
-    const inlinePosters = [];
-    for (const ticket of tickets) {
-      const ticketId = ticket.ticket_id || '';
-      inlinePosters.push({
-        filename: `ingresso-${ticketId}.png`,
-        contentType: 'image/png',
-        content: await buildEmailPoster(ticket),
-        contentId: `ingresso-${ticketId}@bailedamadrid`
-      });
-    }
+    const inlinePosters = [
+      emailPosterInlineAttachment()
+    ];
 
     await sendGmail({
       to: fresh.buyer.email,
       subject: `Reenvio — ${EVENT_NAME}`,
-      text: `Seus ingressos para ${EVENT_NAME}.`,
+      text:
+        `Olá, ${fresh.buyer.name}.\n\n` +
+        `Estamos reenviando seus ingressos para ${EVENT_NAME}. ` +
+        `O pagamento já foi aprovado e este e-mail contém novamente as informações da sua compra.\n\n` +
+        `Os QR Codes dos ingressos estão disponíveis como arquivos anexos. ` +
+        `Apresente o QR Code correspondente na entrada do evento e mantenha este e-mail salvo até o dia da festa.\n\n` +
+        `Pedido: ${fresh.orderId}\n\n` +
+        `Obrigado pela compra. Nos vemos no Baile da Madrid 2.0!`,
       inlineAttachments: inlinePosters,
       attachments: ticketAttachments(tickets),
       html: `
-        <div style="
-          background:#070707;
-          padding:28px 12px;
-          font-family:Arial,sans-serif
-        ">
-          ${tickets.map(ticketHtml).join('')}
+        <div style="margin:0;padding:0;background:#050505;font-family:Arial,sans-serif">
+          <div style="width:100%;max-width:680px;min-height:900px;margin:0 auto;padding:28px 18px 34px;background-color:#090909;background-image:url('cid:baile-madrid-background@bailedamadrid');background-repeat:no-repeat;background-position:center top;background-size:100% auto;color:#fff;text-align:center">
+            <div style="padding:14px 12px 16px;background:rgba(0,0,0,.68);border:1px solid rgba(255,255,255,.18);border-radius:16px;margin-bottom:18px">
+              <div style="font-size:15px;letter-spacing:3px;color:#ff4052;font-weight:800">REENVIO DE INGRESSOS</div>
+              <h1 style="margin:7px 0 5px;font-size:36px;line-height:1.15;color:#fff">${escapeHtml(EVENT_NAME)}</h1>
+              <p style="margin:0;color:#fff;font-size:18px;line-height:1.65">Olá, ${escapeHtml(fresh.buyer.name)}. Seus ingressos estão novamente disponíveis neste e-mail.</p>
+            </div>
+            ${tickets.map(ticketHtml).join('')}
+            <div style="margin-top:18px;padding:20px 18px;background:rgba(0,0,0,.80);border-radius:14px;color:#fff;font-size:15px;line-height:1.75;text-align:left">
+              <p style="margin:0 0 12px"><strong>Seus ingressos foram reenviados com sucesso.</strong></p>
+              <p style="margin:0 0 12px">O QR Code de cada ingresso está disponível como <strong>arquivo anexo</strong>. No dia do evento, apresente o QR Code correspondente para que nossa equipe possa realizar a leitura e validar sua entrada.</p>
+              <p style="margin:0 0 12px">Se houver mais de um ingresso, confira todos os anexos e mantenha cada QR Code disponível. Evite compartilhar os códigos com pessoas que não sejam os titulares dos ingressos.</p>
+              <p style="margin:0 0 12px"><strong>Pedido:</strong> ${escapeHtml(fresh.orderId)}</p>
+              <p style="margin:0">Obrigado pela compra e por fazer parte do <strong>Baile da Madrid 2.0</strong>. Nos vemos no evento!</p>
+            </div>
+          </div>
         </div>
       `
     });
