@@ -132,5 +132,5 @@ app.post("/api/mercadopago/webhook",async(req,res)=>{
   }catch(e){console.error("Webhook Mercado Pago:",e);}
 });
 
-app.get("*",(req,res)=>res.sendFile(path.join(__dirname,"index.html")));
+app.use((req,res)=>res.sendFile(path.join(__dirname,"index.html")));
 app.listen(PORT,()=>console.log(`Baile Madrid em http://localhost:${PORT}`));
