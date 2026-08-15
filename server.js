@@ -83,9 +83,9 @@ function base64UrlEncode(str) {
 }
 
 function createMimeMessage({ from, to, subject, text, html, attachments = [] }) {
-  const boundary = `mixed_${crypto.randomBytes(12).toString('hex')}`;
-  const alternativeBoundary =
-    `alternative_${crypto.randomBytes(12).toString('hex')}`;
+  const mixedBoundary = `mixed_${crypto.randomBytes(12).toString('hex')}`;
+  const relatedBoundary = `related_${crypto.randomBytes(12).toString('hex')}`;
+  const alternativeBoundary = `alternative_${crypto.randomBytes(12).toString('hex')}`;
 
   let message = '';
 
@@ -93,10 +93,15 @@ function createMimeMessage({ from, to, subject, text, html, attachments = [] }) 
   message += `To: ${to}\r\n`;
   message += `Subject: ${subject}\r\n`;
   message += `MIME-Version: 1.0\r\n`;
-  message += `Content-Type: multipart/mixed; boundary="${boundary}"\r\n`;
+  message += `Content-Type: multipart/mixed; boundary="${mixedBoundary}"\r\n`;
   message += `\r\n`;
 
-  message += `--${boundary}\r\n`;
+  // The HTML/text body and its CID images are one multipart/related part.
+  message += `--${mixedBoundary}\r\n`;
+  message += `Content-Type: multipart/related; boundary="${relatedBoundary}"\r\n`;
+  message += `\r\n`;
+
+  message += `--${relatedBoundary}\r\n`;
   message += `Content-Type: multipart/alternative; boundary="${alternativeBoundary}"\r\n`;
   message += `\r\n`;
 
@@ -112,10 +117,10 @@ function createMimeMessage({ from, to, subject, text, html, attachments = [] }) 
   message += `\r\n`;
   message += `${html || ''}\r\n\r\n`;
 
-  message += `--${alternativeBoundary}--\r\n\r\n`;
+  message += `--${alternativeBoundary}--\r\n`;
 
   for (const attachment of attachments) {
-    message += `--${boundary}\r\n`;
+    message += `--${relatedBoundary}\r\n`;
     message += `Content-Type: ${attachment.contentType}; name="${attachment.filename}"\r\n`;
     message += `Content-Disposition: inline; filename="${attachment.filename}"\r\n`;
     message += `Content-Transfer-Encoding: base64\r\n`;
@@ -126,7 +131,10 @@ function createMimeMessage({ from, to, subject, text, html, attachments = [] }) 
 
     message += `\r\n`;
 
-    const content = Buffer.from(attachment.content, 'base64').toString('base64');
+    const content = Buffer.from(
+      String(attachment.content || ''),
+      'base64'
+    ).toString('base64');
 
     for (let i = 0; i < content.length; i += 76) {
       message += content.substring(i, i + 76) + '\r\n';
@@ -135,7 +143,8 @@ function createMimeMessage({ from, to, subject, text, html, attachments = [] }) 
     message += `\r\n`;
   }
 
-  message += `--${boundary}--\r\n`;
+  message += `--${relatedBoundary}--\r\n`;
+  message += `--${mixedBoundary}--\r\n`;
 
   return message;
 }
@@ -546,10 +555,9 @@ function escapeHtml(value) {
 }
 
 function ticketHtml(ticket) {
-  const qrSrc =
-    ticket.qr_base64
-      ? `data:image/png;base64,${ticket.qr_base64}`
-      : '';
+  const qrSrc = ticket.qr_base64
+    ? `cid:${escapeHtml(ticket.ticket_id)}`
+    : '';
 
   return `
     <div style="
@@ -569,20 +577,24 @@ function ticketHtml(ticket) {
         <strong>${escapeHtml(ticket.batch_name)}</strong>
       </p>
 
+      ${
+        qrSrc
+          ? `<img src="${qrSrc}" alt="QR Code do ingresso"
+              style="width:280px;max-width:100%;height:auto;margin:18px auto 10px;display:block">`
+          : ''
+      }
+
+      <p style="margin:10px 0 18px;font-size:16px">
+        <strong>Guarda bem esse QR Code. O som não vai parar. 🔥🎶</strong>
+      </p>
+
       <p style="margin:8px 0">
         Titular: ${escapeHtml(ticket.buyer_name)}
       </p>
 
-      <p style="margin:8px 0">
-        Ingresso: ${escapeHtml(ticket.ticket_id)}
+      <p style="margin:8px 0;font-family:monospace;font-size:14px;word-break:break-all">
+        Código do ingresso: ${escapeHtml(ticket.ticket_id)}
       </p>
-
-      ${
-        qrSrc
-          ? `<img src="${qrSrc}" alt="QR Code do ingresso"
-              style="width:280px;max-width:100%;height:auto;margin:18px auto;display:block">`
-          : ''
-      }
 
       <p style="font-size:13px;color:#aaa">
         Apresente este QR Code na entrada.
@@ -1636,6 +1648,115 @@ app.post('/api/admin/test-order', requireAdmin, async (req, res) => {
       error:
         e.message ||
         'Não foi possível criar a compra de teste.'
+    });
+  }
+});
+
+/* ========================================================
+   TESTE ESPECÍFICO DE PIX
+   ======================================================== */
+
+app.post('/api/admin/test-pix-payment', requireAdmin, async (req, res) => {
+  try {
+    const body = req.body || {};
+
+    const name = String(
+      body.name || 'Cliente Teste PIX'
+    ).trim();
+
+    const email = String(body.email || '').trim();
+
+    const phone = String(
+      body.phone || '61999999999'
+    ).replace(/\D/g, '');
+
+    const cpf = cleanCPF(
+      body.cpf || '11144477735'
+    );
+
+    const batchId = String(
+      body.batchId || 'pre'
+    );
+
+    if (!email) {
+      return res.status(400).json({
+        error: 'Informe o e-mail que receberá o teste.'
+      });
+    }
+
+    if (!batches[batchId]) {
+      return res.status(400).json({
+        error: 'Tipo de ingresso inválido.'
+      });
+    }
+
+    if (cpf.length !== 11) {
+      return res.status(400).json({
+        error: 'CPF de teste inválido.'
+      });
+    }
+
+    const orderId = `TEST-PIX-${crypto.randomUUID()}`;
+    const paymentId = `TEST-PIX-PAY-${crypto.randomUUID()}`;
+
+    const item = {
+      id: batchId,
+      name: batches[batchId].name,
+      quantity: 1,
+      unit_price: batches[batchId].price
+    };
+
+    await db(
+      `
+        INSERT INTO orders(
+          order_id,
+          payment_id,
+          status,
+          total,
+          buyer_name,
+          buyer_email,
+          buyer_cpf,
+          buyer_phone,
+          items
+        )
+        VALUES($1,$2,'approved',$3,$4,$5,$6,$7,$8)
+      `,
+      [
+        orderId,
+        paymentId,
+        batches[batchId].price,
+        name,
+        email,
+        cpf,
+        phone,
+        JSON.stringify([item])
+      ]
+    );
+
+    const fulfilled = await fulfillLocked(orderId);
+    const tickets = await getTickets(orderId);
+
+    res.json({
+      ok: true,
+      test: true,
+      simulatedPayment: 'pix',
+      paymentStatus: 'approved',
+      orderId,
+      emailSent: Boolean(fulfilled.emailSentAt),
+      emailError: fulfilled.emailError || null,
+      tickets: tickets.map(t => ({
+        ticketId: t.ticket_id,
+        batchName: t.batch_name,
+        usedAt: t.used_at
+      }))
+    });
+  } catch (e) {
+    console.error('Teste PIX:', e);
+
+    res.status(500).json({
+      error:
+        e.message ||
+        'Não foi possível executar o teste de PIX.'
     });
   }
 });
