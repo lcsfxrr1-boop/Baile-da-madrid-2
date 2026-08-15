@@ -1,114 +1,672 @@
-const nodemailer=require('nodemailer');
-const express=require('express');
-const path=require('path');
-const crypto=require('crypto');
-const QRCode=require('qrcode');
-const{Pool}=require('pg');
+const express = require('express');
+const path = require('path');
+const crypto = require('crypto');
+const QRCode = require('qrcode');
+const { Pool } = require('pg');
+const { google } = require('googleapis');
 
-const app=express();
+const app = express();
 
-app.use(express.json({limit:'100kb'}));
+app.use(express.json({ limit: '100kb' }));
 app.use(express.static(path.join(__dirname)));
 
-const PORT=process.env.PORT||3000;
+const PORT = process.env.PORT || 3000;
 
-const ACCESS_TOKEN=process.env.MP_ACCESS_TOKEN;
+const ACCESS_TOKEN = process.env.MP_ACCESS_TOKEN;
 
-const PUBLIC_KEY=process.env.MP_PUBLIC_KEY||'';
+const PUBLIC_KEY = process.env.MP_PUBLIC_KEY || '';
 
-const PUBLIC_BASE_URL=(process.env.PUBLIC_BASE_URL||'').replace(/\/$/,'');
+const PUBLIC_BASE_URL =
+  (process.env.PUBLIC_BASE_URL || '').replace(/\/$/, '');
 
-const ADMIN_TOKEN=process.env.ADMIN_TOKEN||'';
+const ADMIN_TOKEN =
+  process.env.ADMIN_TOKEN || '';
 
 /* ========================================================
-   GMAIL / NODEMAILER
+   GMAIL API / OAUTH2
    ======================================================== */
 
-const EMAIL_USER=process.env.EMAIL_USER||'';
+const GMAIL_CLIENT_ID =
+  process.env.GMAIL_CLIENT_ID || '';
 
-const EMAIL_PASS=process.env.EMAIL_PASS||'';
+const GMAIL_CLIENT_SECRET =
+  process.env.GMAIL_CLIENT_SECRET || '';
 
-const EMAIL_FROM=process.env.EMAIL_FROM||EMAIL_USER;
+const GMAIL_REDIRECT_URI =
+  process.env.GMAIL_REDIRECT_URI || '';
 
-const mailer=
-  EMAIL_USER&&EMAIL_PASS
-    ?nodemailer.createTransport({
-        service:'gmail',
-        auth:{
-          user:EMAIL_USER,
-          pass:EMAIL_PASS
-        }
-      })
-    :null;
+const GMAIL_USER =
+  process.env.GMAIL_USER || '';
 
-const EVENT_NAME='Baile da Madrid 2.0';
+const GMAIL_REFRESH_TOKEN =
+  process.env.GMAIL_REFRESH_TOKEN || '';
 
-const batches={
-  pre:{name:'Pré-Venda',price:10},
-  lote1:{name:'1º Lote',price:20},
-  lote2:{name:'2º Lote',price:25},
-  lote3:{name:'3º Lote',price:30},
-  vip:{name:'Área VIP',price:70}
-};
+const EVENT_NAME =
+  'Baile da Madrid 2.0';
 
-if(!process.env.DATABASE_URL){
-  console.warn('DATABASE_URL não configurado.');
+function gmailReady() {
+  return Boolean(
+    GMAIL_CLIENT_ID &&
+    GMAIL_CLIENT_SECRET &&
+    GMAIL_REDIRECT_URI &&
+    GMAIL_USER &&
+    GMAIL_REFRESH_TOKEN
+  );
 }
 
-const pool=
-  process.env.DATABASE_URL
-    ?new Pool({
-        connectionString:process.env.DATABASE_URL,
-        ssl:{rejectUnauthorized:false},
-        max:5
-      })
-    :null;
+function getGmailClient() {
 
-async function db(query,params=[]){
-  if(!pool){
-    throw new Error('DATABASE_URL não configurado.');
+  if (
+    !GMAIL_CLIENT_ID ||
+    !GMAIL_CLIENT_SECRET ||
+    !GMAIL_REDIRECT_URI
+  ) {
+    throw new Error(
+      'Credenciais da Gmail API não configuradas.'
+    );
   }
 
-  return pool.query(query,params);
+  const oauth2Client =
+    new google.auth.OAuth2(
+      GMAIL_CLIENT_ID,
+      GMAIL_CLIENT_SECRET,
+      GMAIL_REDIRECT_URI
+    );
+
+  if (GMAIL_REFRESH_TOKEN) {
+
+    oauth2Client.setCredentials({
+      refresh_token:
+        GMAIL_REFRESH_TOKEN
+    });
+  }
+
+  return oauth2Client;
 }
 
-async function initDb(){
+function getGmailService() {
 
-  if(!pool)return;
+  const auth =
+    getGmailClient();
+
+  return google.gmail({
+    version: 'v1',
+    auth
+  });
+}
+
+function base64UrlEncode(str) {
+
+  return Buffer
+    .from(str, 'utf8')
+    .toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
+}
+
+function createMimeMessage({
+  from,
+  to,
+  subject,
+  text,
+  html,
+  attachments = []
+}) {
+
+  const boundary =
+    `mixed_${crypto.randomBytes(12).toString('hex')}`;
+
+  const alternativeBoundary =
+    `alternative_${crypto.randomBytes(12).toString('hex')}`;
+
+  let message = '';
+
+  message += `From: ${from}\r\n`;
+  message += `To: ${to}\r\n`;
+  message += `Subject: ${subject}\r\n`;
+  message += `MIME-Version: 1.0\r\n`;
+  message += `Content-Type: multipart/mixed; boundary="${boundary}"\r\n`;
+  message += `\r\n`;
+
+  message += `--${boundary}\r\n`;
+  message += `Content-Type: multipart/alternative; boundary="${alternativeBoundary}"\r\n`;
+  message += `\r\n`;
+
+  message += `--${alternativeBoundary}\r\n`;
+  message += `Content-Type: text/plain; charset="UTF-8"\r\n`;
+  message += `Content-Transfer-Encoding: 8bit\r\n`;
+  message += `\r\n`;
+  message += `${text || ''}\r\n`;
+  message += `\r\n`;
+
+  message += `--${alternativeBoundary}\r\n`;
+  message += `Content-Type: text/html; charset="UTF-8"\r\n`;
+  message += `Content-Transfer-Encoding: 8bit\r\n`;
+  message += `\r\n`;
+  message += `${html || ''}\r\n`;
+  message += `\r\n`;
+
+  message += `--${alternativeBoundary}--\r\n`;
+  message += `\r\n`;
+
+  for (const attachment of attachments) {
+
+    message += `--${boundary}\r\n`;
+    message += `Content-Type: ${attachment.contentType}; name="${attachment.filename}"\r\n`;
+    message += `Content-Disposition: inline; filename="${attachment.filename}"\r\n`;
+    message += `Content-Transfer-Encoding: base64\r\n`;
+
+    if (attachment.contentId) {
+
+      message += `Content-ID: <${attachment.contentId}>\r\n`;
+    }
+
+    message += `\r\n`;
+
+    const content =
+      Buffer
+        .from(attachment.content, 'base64')
+        .toString('base64');
+
+    for (
+      let i = 0;
+      i < content.length;
+      i += 76
+    ) {
+
+      message +=
+        content.substring(i, i + 76) +
+        '\r\n';
+    }
+
+    message += `\r\n`;
+  }
+
+  message += `--${boundary}--\r\n`;
+
+  return message;
+}
+
+async function sendGmail({
+  to,
+  subject,
+  text,
+  html,
+  attachments = []
+}) {
+
+  if (!gmailReady()) {
+
+    throw new Error(
+      'Gmail API não está configurada. ' +
+      'Verifique GMAIL_CLIENT_ID, ' +
+      'GMAIL_CLIENT_SECRET, ' +
+      'GMAIL_REDIRECT_URI, ' +
+      'GMAIL_USER e GMAIL_REFRESH_TOKEN.'
+    );
+  }
+
+  const gmail =
+    getGmailService();
+
+  const mime =
+    createMimeMessage({
+
+      from:
+        GMAIL_USER,
+
+      to,
+
+      subject,
+
+      text,
+
+      html,
+
+      attachments
+    });
+
+  const encoded =
+    base64UrlEncode(mime);
+
+  const result =
+    await gmail.users.messages.send({
+
+      userId: 'me',
+
+      requestBody: {
+        raw: encoded
+      }
+
+    });
+
+  return result.data;
+}
+
+/* ========================================================
+   AUTORIZAÇÃO GMAIL
+   ======================================================== */
+
+app.get(
+  '/api/gmail/auth',
+  (req, res) => {
+
+    if (
+      !GMAIL_CLIENT_ID ||
+      !GMAIL_CLIENT_SECRET ||
+      !GMAIL_REDIRECT_URI
+    ) {
+
+      return res.status(500).send(
+        'Configure GMAIL_CLIENT_ID, ' +
+        'GMAIL_CLIENT_SECRET e ' +
+        'GMAIL_REDIRECT_URI no Render.'
+      );
+    }
+
+    const oauth2Client =
+      new google.auth.OAuth2(
+        GMAIL_CLIENT_ID,
+        GMAIL_CLIENT_SECRET,
+        GMAIL_REDIRECT_URI
+      );
+
+    const url =
+      oauth2Client.generateAuthUrl({
+
+        access_type: 'offline',
+
+        prompt: 'consent',
+
+        scope: [
+          'https://www.googleapis.com/auth/gmail.send'
+        ]
+
+      });
+
+    res.redirect(url);
+  }
+);
+
+app.get(
+  '/api/gmail/oauth2callback',
+  async (req, res) => {
+
+    try {
+
+      const code =
+        String(
+          req.query.code || ''
+        ).trim();
+
+      if (!code) {
+
+        return res.status(400).send(
+          'Código OAuth não recebido.'
+        );
+      }
+
+      const oauth2Client =
+        new google.auth.OAuth2(
+          GMAIL_CLIENT_ID,
+          GMAIL_CLIENT_SECRET,
+          GMAIL_REDIRECT_URI
+        );
+
+      const { tokens } =
+        await oauth2Client.getToken(code);
+
+      if (!tokens.refresh_token) {
+
+        return res.status(500).send(
+          'O Google não retornou um refresh token. ' +
+          'Tente novamente usando /api/gmail/auth.'
+        );
+      }
+
+      res.send(`
+        <!doctype html>
+        <html lang="pt-BR">
+        <head>
+          <meta charset="UTF-8">
+          <meta name="viewport"
+            content="width=device-width,initial-scale=1">
+          <title>Gmail autorizado</title>
+          <style>
+            body{
+              margin:0;
+              padding:40px 20px;
+              background:#070707;
+              color:#fff;
+              font-family:Arial,sans-serif;
+            }
+            .box{
+              max-width:700px;
+              margin:auto;
+              background:#111;
+              border:1px solid #333;
+              border-radius:16px;
+              padding:25px;
+            }
+            code{
+              display:block;
+              word-break:break-all;
+              background:#000;
+              padding:15px;
+              border-radius:10px;
+              margin-top:15px;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="box">
+
+            <h2>
+              Gmail autorizado com sucesso!
+            </h2>
+
+            <p>
+              Copie o Refresh Token abaixo e coloque
+              no Render como:
+            </p>
+
+            <strong>
+              GMAIL_REFRESH_TOKEN
+            </strong>
+
+            <code>${tokens.refresh_token}</code>
+
+            <p>
+              Depois de salvar a variável no Render,
+              faça um novo deploy.
+            </p>
+
+          </div>
+        </body>
+        </html>
+      `);
+
+    } catch (e) {
+
+      console.error(
+        'Erro OAuth Gmail:',
+        e
+      );
+
+      res.status(500).send(
+        `Erro ao autorizar Gmail: ${
+          e.message || e
+        }`
+      );
+    }
+  }
+);
+
+/* ========================================================
+   TESTE GMAIL API
+   ======================================================== */
+
+app.get(
+  '/api/admin/test-smtp',
+  requireAdmin,
+  async (req, res) => {
+
+    try {
+
+      if (!gmailReady()) {
+
+        return res.status(500).json({
+
+          ok: false,
+
+          error:
+            'Gmail API não configurada. ' +
+            'Verifique as variáveis GMAIL_*.'
+        });
+      }
+
+      const to =
+        String(
+          req.query.to || ''
+        ).trim();
+
+      if (!to) {
+
+        return res.json({
+
+          ok: true,
+
+          provider:
+            'Gmail API',
+
+          message:
+            'Gmail API configurada. ' +
+            'Informe ?to=EMAIL para enviar o teste.',
+
+          from:
+            GMAIL_USER
+        });
+      }
+
+      const info =
+        await sendGmail({
+
+          to,
+
+          subject:
+            'Teste de e-mail — Baile da Madrid 2.0',
+
+          text:
+            'Este é um teste da Gmail API.',
+
+          html: `
+            <div style="
+              font-family:Arial,sans-serif;
+              padding:30px
+            ">
+
+              <h2>
+                Gmail API funcionando!
+              </h2>
+
+              <p>
+                Este é um teste do sistema
+                de e-mails do
+                ${EVENT_NAME}.
+              </p>
+
+            </div>
+          `
+        });
+
+      res.json({
+
+        ok: true,
+
+        provider:
+          'Gmail API',
+
+        message:
+          'E-mail de teste enviado com sucesso.',
+
+        id:
+          info.id || null,
+
+        from:
+          GMAIL_USER,
+
+        to
+      });
+
+    } catch (e) {
+
+      console.error(
+        'Erro no teste Gmail:',
+        e
+      );
+
+      res.status(500).json({
+
+        ok: false,
+
+        error:
+          e.message ||
+          'Falha na Gmail API.'
+      });
+    }
+/* ========================================================
+   CONFIGURAÇÕES DO EVENTO
+   ======================================================== */
+
+const batches = {
+
+  pre: {
+    name: 'Pré-Venda',
+    price: 10
+  },
+
+  lote1: {
+    name: '1º Lote',
+    price: 20
+  },
+
+  lote2: {
+    name: '2º Lote',
+    price: 25
+  },
+
+  lote3: {
+    name: '3º Lote',
+    price: 30
+  },
+
+  vip: {
+    name: 'Área VIP',
+    price: 70
+  }
+
+};
+
+/* ========================================================
+   BANCO DE DADOS
+   ======================================================== */
+
+if (!process.env.DATABASE_URL) {
+
+  console.warn(
+    'DATABASE_URL não configurado.'
+  );
+
+}
+
+const pool =
+  process.env.DATABASE_URL
+
+    ? new Pool({
+
+        connectionString:
+          process.env.DATABASE_URL,
+
+        ssl: {
+          rejectUnauthorized: false
+        },
+
+        max: 5
+
+      })
+
+    : null;
+
+async function db(
+  query,
+  params = []
+) {
+
+  if (!pool) {
+
+    throw new Error(
+      'DATABASE_URL não configurado.'
+    );
+
+  }
+
+  return pool.query(
+    query,
+    params
+  );
+
+}
+
+async function initDb() {
+
+  if (!pool) return;
 
   await db(`
     CREATE TABLE IF NOT EXISTS orders(
+
       order_id TEXT PRIMARY KEY,
+
       payment_id TEXT UNIQUE NOT NULL,
+
       status TEXT NOT NULL,
+
       total NUMERIC(10,2) NOT NULL,
+
       buyer_name TEXT NOT NULL,
+
       buyer_email TEXT NOT NULL,
+
       buyer_cpf TEXT NOT NULL,
+
       buyer_phone TEXT NOT NULL,
+
       items JSONB NOT NULL,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ,
-      email_sent_at TIMESTAMPTZ,
+
+      created_at
+        TIMESTAMPTZ NOT NULL
+        DEFAULT NOW(),
+
+      updated_at
+        TIMESTAMPTZ,
+
+      email_sent_at
+        TIMESTAMPTZ,
+
       email_error TEXT
+
     )
   `);
 
   await db(`
     CREATE TABLE IF NOT EXISTS tickets(
+
       ticket_id TEXT PRIMARY KEY,
+
       order_id TEXT NOT NULL
         REFERENCES orders(order_id)
         ON DELETE CASCADE,
+
       token_hash TEXT UNIQUE NOT NULL,
+
       batch_id TEXT NOT NULL,
+
       batch_name TEXT NOT NULL,
+
       unit_price NUMERIC(10,2) NOT NULL,
+
       buyer_name TEXT NOT NULL,
+
       buyer_email TEXT NOT NULL,
+
       qr_base64 TEXT NOT NULL,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+      created_at
+        TIMESTAMPTZ NOT NULL
+        DEFAULT NOW(),
+
       used_at TIMESTAMPTZ
+
     )
   `);
 
@@ -129,1096 +687,303 @@ async function initDb(){
     idx_tickets_ticket_id
     ON tickets(ticket_id)
   `);
+
 }
 
-function cleanCPF(v){
-  return String(v||'').replace(/\D/g,'');
+/* ========================================================
+   FUNÇÕES AUXILIARES
+   ======================================================== */
+
+function cleanCPF(v) {
+
+  return String(v || '')
+    .replace(/\D/g, '');
+
 }
 
-function splitName(name){
+function splitName(name) {
 
-  const p=
-    String(name||'')
+  const p =
+    String(name || '')
       .trim()
       .split(/\s+/)
       .filter(Boolean);
 
-  return{
-    first_name:p.shift()||'Cliente',
-    last_name:p.join(' ')||'Baile Madrid'
+  return {
+
+    first_name:
+      p.shift() || 'Cliente',
+
+    last_name:
+      p.join(' ') ||
+      'Baile Madrid'
+
   };
+
 }
 
-function calculateItems(items){
+function calculateItems(items) {
 
-  if(!Array.isArray(items)||!items.length){
-    throw new Error('Nenhum ingresso selecionado.');
+  if (
+    !Array.isArray(items) ||
+    !items.length
+  ) {
+
+    throw new Error(
+      'Nenhum ingresso selecionado.'
+    );
+
   }
 
-  let total=0;
+  let total = 0;
 
-  const normalized=[];
+  const normalized = [];
 
-  for(const item of items){
+  for (
+    const item
+    of items
+  ) {
 
-    const batch=batches[item.id];
+    const batch =
+      batches[item.id];
 
-    const quantity=Number(item.quantity);
+    const quantity =
+      Number(item.quantity);
 
-    if(
-      !batch||
-      !Number.isInteger(quantity)||
-      quantity<1||
-      quantity>10
-    ){
-      throw new Error('Ingresso ou quantidade inválida.');
+    if (
+      !batch ||
+      !Number.isInteger(quantity) ||
+      quantity < 1 ||
+      quantity > 10
+    ) {
+
+      throw new Error(
+        'Ingresso ou quantidade inválida.'
+      );
+
     }
 
-    total+=batch.price*quantity;
+    total +=
+      batch.price * quantity;
 
     normalized.push({
-      id:item.id,
-      name:batch.name,
+
+      id:
+        item.id,
+
+      name:
+        batch.name,
+
       quantity,
-      unit_price:batch.price
+
+      unit_price:
+        batch.price
+
     });
+
   }
 
-  if(
+  if (
     normalized.reduce(
-      (s,i)=>s+i.quantity,
+      (s, i) =>
+        s + i.quantity,
       0
-    )>10
-  ){
+    ) > 10
+  ) {
+
     throw new Error(
       'Limite máximo de 10 ingressos por compra.'
     );
+
   }
 
-  return{
+  return {
+
     normalized,
+
     total
+
   };
+
 }
 
-function totalTicketCount(order){
+function totalTicketCount(order) {
 
-  return(order.items||[])
+  return (order.items || [])
     .reduce(
-      (sum,item)=>
-        sum+Number(item.quantity||0),
+      (sum, item) =>
+        sum +
+        Number(
+          item.quantity || 0
+        ),
       0
     );
+
 }
 
-function makeTicketCode(){
+function makeTicketCode() {
 
-  return`BMD2-${
+  return `BMD2-${
     crypto
       .randomBytes(5)
       .toString('hex')
       .toUpperCase()
   }`;
+
 }
 
-function makeTicketToken(){
+function makeTicketToken() {
 
   return crypto
     .randomBytes(32)
     .toString('base64url');
+
 }
 
-function hashToken(token){
+function hashToken(token) {
 
   return crypto
     .createHash('sha256')
     .update(token)
     .digest('hex');
-}
 
-function requireAdmin(req,res,next){
-
-  const supplied=
-    req.get('x-admin-token')||
-    req.body?.adminToken||
-    req.query?.adminToken||
-    '';
-
-  if(!ADMIN_TOKEN){
-
-    return res.status(503).json({
-      error:'ADMIN_TOKEN não configurado no servidor.'
-    });
-  }
-
-  if(supplied!==ADMIN_TOKEN){
-
-    return res.status(401).json({
-      error:'Acesso não autorizado.'
-    });
-  }
-
-  next();
-}
-
-function mailReady(){
-
-  return Boolean(
-    mailer&&
-    EMAIL_USER&&
-    EMAIL_PASS&&
-    EMAIL_FROM
-  );
 }
 
 /* ========================================================
-   TESTE GMAIL
+   ADMIN
    ======================================================== */
 
-app.get(
-  '/api/admin/test-smtp',
-  requireAdmin,
-  async(req,res)=>{
+function requireAdmin(
+  req,
+  res,
+  next
+) {
 
-    try{
-
-      if(!mailReady()){
-
-        return res.status(500).json({
-          ok:false,
-          error:
-            'Gmail não configurado. '+
-            'Verifique EMAIL_USER e EMAIL_PASS.'
-        });
-      }
-
-      const to=
-        String(
-          req.query.to||
-          req.body?.to||
-          ''
-        ).trim();
-
-      if(!to){
-
-        return res.json({
-          ok:true,
-          provider:'Gmail/Nodemailer',
-          message:
-            'Gmail configurado corretamente. '+
-            'Informe ?to=EMAIL para realizar um envio de teste.',
-          from:EMAIL_FROM
-        });
-      }
-
-      const info=
-        await mailer.sendMail({
-
-          from:EMAIL_FROM,
-
-          to,
-
-          subject:
-            'Teste de e-mail — Baile da Madrid 2.0',
-
-          html:`
-            <div style="
-              font-family:Arial,sans-serif;
-              padding:30px
-            ">
-
-              <h2>
-                Gmail/Nodemailer funcionando!
-              </h2>
-
-              <p>
-                Este é um teste do sistema
-                de e-mails do ${EVENT_NAME}.
-              </p>
-
-            </div>
-          `
-        });
-
-      res.json({
-
-        ok:true,
-
-        provider:
-          'Gmail/Nodemailer',
-
-        message:
-          'E-mail de teste enviado com sucesso.',
-
-        id:
-          info.messageId||null,
-
-        from:
-          EMAIL_FROM,
-
-        to
-      });
-
-    }catch(e){
-
-      console.error(
-        'Erro no teste Gmail:',
-        e
-      );
-
-      res.status(500).json({
-
-        ok:false,
-
-        error:
-          e.message||
-          'Falha no Gmail.',
-
-        code:
-          e.code||null
-      });
-    }
-  }
-);
-
-async function mpRequest(
-  url,
-  options={}
-){
-
-  if(!ACCESS_TOKEN){
-
-    throw new Error(
-      'MP_ACCESS_TOKEN não configurado no servidor.'
-    );
-  }
-
-  const r=
-    await fetch(
-      url,
-      {
-        ...options,
-
-        headers:{
-          Authorization:
-            `Bearer ${ACCESS_TOKEN}`,
-
-          'Content-Type':
-            'application/json',
-
-          ...(options.headers||{})
-        }
-      }
-    );
-
-  const text=
-    await r.text();
-
-  let data;
-
-  try{
-    data=JSON.parse(text);
-  }catch{
-    data={message:text};
-  }
-
-  if(!r.ok){
-
-    console.error(
-      'Mercado Pago:',
-      r.status,
-      data
-    );
-
-    throw new Error(
-      data.message||
-      'Erro no Mercado Pago.'
-    );
-  }
-
-  return data;
-}
-
-function ticketUrl(token){
-
-  return(
-    `${PUBLIC_BASE_URL}`+
-    `/validar.html?ticket=`+
-    encodeURIComponent(token)
-  );
-}
-
-async function buildTicket(
-  order,
-  item
-){
-
-  if(!PUBLIC_BASE_URL){
-
-    throw new Error(
-      'PUBLIC_BASE_URL não configurado.'
-    );
-  }
-
-  const token=
-    makeTicketToken();
-
-  const ticketId=
-    makeTicketCode();
-
-  const qrDataUrl=
-    await QRCode.toDataURL(
-      ticketUrl(token),
-      {
-        errorCorrectionLevel:'H',
-        margin:2,
-        width:360
-      }
-    );
-
-  return{
-
-    ticketId,
-
-    tokenHash:
-      hashToken(token),
-
-    batchId:
-      item.id,
-
-    batchName:
-      item.name,
-
-    unitPrice:
-      item.unit_price,
-
-    buyerName:
-      order.buyer.name,
-
-    buyerEmail:
-      order.buyer.email,
-
-    qrBase64:
-      qrDataUrl.split(',')[1]
-  };
-}
-
-function esc(v){
-
-  return String(v??'')
-    .replace(
-      /[&<>"']/g,
-      c=>({
-        '&':'&amp;',
-        '<':'&lt;',
-        '>':'&gt;',
-        '"':'&quot;',
-        "'":'&#39;'
-      }[c])
-    );
-      }
-function ticketHtml(t){
-
-  const ticketId=
-    t.ticket_id||
-    t.ticketId||
+  const supplied =
+    req.get('x-admin-token') ||
+    req.body?.adminToken ||
+    req.query?.adminToken ||
     '';
 
-  const batchName=
-    t.batch_name||
-    t.batchName||
-    '';
+  if (!ADMIN_TOKEN) {
 
-  const buyerName=
-    t.buyer_name||
-    t.buyerName||
-    '';
+    return res.status(503).json({
 
-  const qrContentId=
-    `qr-${ticketId}`;
+      error:
+        'ADMIN_TOKEN não configurado no servidor.'
 
-  return`
+    });
 
-    <div style="
-      max-width:520px;
-      margin:0 auto 24px;
-      background:#111;
-      border:1px solid #2b2b2b;
-      border-radius:18px;
-      padding:24px;
-      text-align:center;
-      color:#fff;
-      font-family:Arial,sans-serif
-    ">
+  }
 
-      <div style="
-        font-size:12px;
-        letter-spacing:3px;
-        color:#ff3a4a;
-        font-weight:800
-      ">
-        INGRESSO DIGITAL
-      </div>
+  if (
+    supplied !== ADMIN_TOKEN
+  ) {
 
-      <h2 style="
-        margin:8px 0 4px;
-        font-size:27px
-      ">
-        ${esc(EVENT_NAME)}
-      </h2>
+    return res.status(401).json({
 
-      <div style="
-        font-size:16px;
-        font-weight:700;
-        margin-bottom:18px
-      ">
-        ${esc(batchName)}
-      </div>
+      error:
+        'Acesso não autorizado.'
 
-      <img
-        src="cid:${esc(qrContentId)}"
-        alt="QR Code do ingresso"
-        width="250"
-        height="250"
-        style="
-          display:block;
-          margin:0 auto 18px;
-          background:#fff;
-          padding:10px;
-          border-radius:10px
-        "
-      >
+    });
 
-      <div style="
-        font-size:13px;
-        color:#aaa
-      ">
-        Titular
-      </div>
+  }
 
-      <div style="
-        font-size:18px;
-        font-weight:800;
-        margin:3px 0 14px
-      ">
-        ${esc(buyerName)}
-      </div>
+  next();
 
-      <div style="
-        font-size:12px;
-        color:#aaa
-      ">
-        Código do ingresso
-      </div>
-
-      <div style="
-        font-family:monospace;
-        font-size:16px;
-        font-weight:800;
-        letter-spacing:1px;
-        margin-top:4px
-      ">
-        ${esc(ticketId)}
-      </div>
-
-      <p style="
-        font-size:12px;
-        color:#999;
-        margin:18px 0 0
-      ">
-        Apresente este QR Code na entrada.
-        Cada ingresso possui um código único.
-      </p>
-
-    </div>
-  `;
-}
-
-function ticketAttachments(tickets){
-
-  return tickets.map(t=>{
-
-    const ticketId=
-      t.ticket_id||
-      t.ticketId||
-      '';
-
-    const qrBase64=
-      t.qr_base64||
-      t.qrBase64||
-      '';
-
-    if(!ticketId||!qrBase64){
-
-      throw new Error(
-        `QR Code ausente para o ingresso ${
-          ticketId||'(sem código)'
-        }.`
-      );
-    }
-
-    return{
-
-      content:
-        qrBase64,
-
-      filename:
-        `qr-${ticketId}.png`,
-
-      contentId:
-        `qr-${ticketId}`,
-
-      contentType:
-        'image/png'
-    };
-  });
 }
 
 /* ========================================================
    PEDIDOS
    ======================================================== */
 
-async function getOrder(orderId){
+async function getOrder(
+  orderId
+) {
 
-  const r=
+  const r =
     await db(
       `
         SELECT *
         FROM orders
-        WHERE order_id=$1
-      `,
-      [orderId]
-    );
-
-  if(!r.rows[0])
-    return null;
-
-  const o=
-    r.rows[0];
-
-  return{
-
-    orderId:
-      o.order_id,
-
-    paymentId:
-      o.payment_id,
-
-    status:
-      o.status,
-
-    total:
-      Number(o.total),
-
-    items:
-      o.items,
-
-    buyer:{
-
-      name:
-        o.buyer_name,
-
-      email:
-        o.buyer_email,
-
-      cpf:
-        o.buyer_cpf,
-
-      phone:
-        o.buyer_phone
-    },
-
-    createdAt:
-      o.created_at,
-
-    updatedAt:
-      o.updated_at,
-
-    emailSentAt:
-      o.email_sent_at,
-
-    emailError:
-      o.email_error
-  };
-}
-
-async function countTickets(orderId){
-
-  const r=
-    await db(
-      `
-        SELECT
-          COUNT(*)::int AS n
-        FROM tickets
-        WHERE order_id=$1
-      `,
-      [orderId]
-    );
-
-  return r.rows[0].n;
-}
-
-async function getTickets(orderId){
-
-  const r=
-    await db(
-      `
-        SELECT
-          ticket_id,
-          batch_id,
-          batch_name,
-          unit_price,
-          buyer_name,
-          buyer_email,
-          qr_base64,
-          created_at,
-          used_at
-        FROM tickets
-        WHERE order_id=$1
-        ORDER BY created_at
-      `,
-      [orderId]
-    );
-
-  return r.rows;
-}
-
-/* ========================================================
-   GERAR INGRESSO + ENVIAR EMAIL
-   ======================================================== */
-
-async function fulfillOrder(orderId){
-
-  const order=
-    await getOrder(orderId);
-
-  if(
-    !order||
-    order.status!=='approved'
-  ){
-    return order;
-  }
-
-  const expected=
-    totalTicketCount(order);
-
-  let current=
-    await countTickets(orderId);
-
-  if(current<expected){
-
-    const flat=[];
-
-    for(
-      const item
-      of order.items
-    ){
-
-      for(
-        let i=0;
-        i<item.quantity;
-        i++
-      ){
-
-        flat.push(item);
-      }
-    }
-
-    for(
-      let i=current;
-      i<expected;
-      i++
-    ){
-
-      const t=
-        await buildTicket(
-          order,
-          flat[i]
-        );
-
-      try{
-
-        await db(
-          `
-            INSERT INTO tickets(
-              ticket_id,
-              order_id,
-              token_hash,
-              batch_id,
-              batch_name,
-              unit_price,
-              buyer_name,
-              buyer_email,
-              qr_base64
-            )
-            VALUES(
-              $1,$2,$3,$4,$5,$6,$7,$8,$9
-            )
-          `,
-          [
-            t.ticketId,
-            orderId,
-            t.tokenHash,
-            t.batchId,
-            t.batchName,
-            t.unitPrice,
-            t.buyerName,
-            t.buyerEmail,
-            t.qrBase64
-          ]
-        );
-
-      }catch(e){
-
-        if(e.code!=='23505'){
-          throw e;
-        }
-
-        i--;
-
-        continue;
-      }
-    }
-
-    current=
-      await countTickets(
-        orderId
-      );
-  }
-
-  /* ======================================================
-     GMAIL / NODEMAILER
-     ====================================================== */
-
-  if(
-    current===expected&&
-    !order.emailSentAt
-  ){
-
-    if(!mailReady()){
-
-      await db(
-        `
-          UPDATE orders
-          SET
-            email_error=$1,
-            updated_at=NOW()
-          WHERE order_id=$2
-        `,
-        [
-          'Gmail não está configurado corretamente.',
-          orderId
-        ]
-      );
-
-    }else{
-
-      try{
-
-        const tickets=
-          await getTickets(
-            orderId
-          );
-
-        await mailer.sendMail({
-
-          from:
-            EMAIL_FROM,
-
-          to:
-            order.buyer.email,
-
-          subject:
-            `Seu ingresso — ${EVENT_NAME}`,
-
-          text:
-            `Pagamento aprovado. Seus ${
-              tickets.length
-            } ingresso(s) para ${
-              EVENT_NAME
-            } estão neste e-mail.`,
-
-          attachments:
-            ticketAttachments(tickets),
-
-          html:
-            `
-              <div style="
-                background:#070707;
-                padding:28px 12px;
-                font-family:Arial,sans-serif
-              ">
-
-                <div style="
-                  max-width:620px;
-                  margin:auto;
-                  color:#fff;
-                  text-align:center
-                ">
-
-                  <div style="
-                    font-size:12px;
-                    letter-spacing:3px;
-                    color:#ff3a4a;
-                    font-weight:800
-                  ">
-                    PAGAMENTO APROVADO
-                  </div>
-
-                  <h1>
-                    ${esc(EVENT_NAME)}
-                  </h1>
-
-                  <p style="color:#bbb">
-                    Olá,
-                    ${esc(order.buyer.name)}.
-                    Guarde este e-mail e apresente
-                    o QR Code correspondente na entrada.
-                  </p>
-
-                  ${
-                    tickets
-                      .map(ticketHtml)
-                      .join('')
-                  }
-
-                  <p style="
-                    color:#777;
-                    font-size:11px
-                  ">
-                    Pedido:
-                    ${esc(order.orderId)}
-                  </p>
-
-                </div>
-
-              </div>
-            `
-        });
-
-        await db(
-          `
-            UPDATE orders
-            SET
-              email_sent_at=NOW(),
-              email_error=NULL,
-              updated_at=NOW()
-            WHERE order_id=$1
-          `,
-          [orderId]
-        );
-
-      }catch(emailError){
-
-        console.error(
-          'ERRO GMAIL:',
-          emailError
-        );
-
-        const errorText=
-          [
-            emailError.message,
-
-            emailError.code
-              ?`code=${emailError.code}`
-              :null
-
-          ]
-          .filter(Boolean)
-          .join(' | ');
-
-        await db(
-          `
-            UPDATE orders
-            SET
-              email_error=$1,
-              updated_at=NOW()
-            WHERE order_id=$2
-          `,
-          [
-            errorText.substring(
-              0,
-              2000
-            ),
-
-            orderId
-          ]
-        );
-      }
-    }
-  }
-
-  return await getOrder(orderId);
-}
-
-/* ========================================================
-   LOCK
-   ======================================================== */
-
-const locks=
-  new Map();
-
-function fulfillLocked(id){
-
-  if(locks.has(id)){
-    return locks.get(id);
-  }
-
-  const p=
-    fulfillOrder(id)
-      .catch(e=>{
-
-        console.error(
-          'Emissão:',
-          e
-        );
-
-        throw e;
-
-      })
-      .finally(()=>
-        locks.delete(id)
-      );
-
-  locks.set(id,p);
-
-  return p;
-}
-
-/* ========================================================
-   HEALTH
-   ======================================================== */
-
-app.get(
-  '/health',
-  async(req,res)=>{
-
-    try{
-
-      if(pool){
-
-        await db(
-          'SELECT 1'
-        );
-      }
-
-      res.json({
-
-        ok:true,
-
-        db:
-          Boolean(pool),
-
-        event:
-          EVENT_NAME,
-
-        emailProvider:
-          'Gmail/Nodemailer'
-      });
-
-    }catch(e){
-
-      res.status(503).json({
-
-        ok:false,
-
-        error:
-          e.message
-      });
-    }
-  }
-);
-
-/* ========================================================
-   CONFIGURAÇÃO PÚBLICA MERCADO PAGO
-   ======================================================== */
-
-app.get(
-  '/api/public-config',
-  (req,res)=>{
-
-    res.json({
-
-      mercadoPagoPublicKey:
-        PUBLIC_KEY
-    });
-  }
-);
-
-/* ========================================================
+       /* ========================================================
    CRIAR PIX
    ======================================================== */
 
 app.post(
   '/api/create-pix',
-  async(req,res)=>{
+  async (req, res) => {
 
-    try{
+    try {
 
-      const{
+      const {
         buyer,
         items
-      }=req.body||{};
+      } = req.body || {};
 
-      const name=
+      const name =
         String(
-          buyer?.name||''
+          buyer?.name || ''
         ).trim();
 
-      const email=
+      const email =
         String(
-          buyer?.email||''
+          buyer?.email || ''
         ).trim();
 
-      const phone=
+      const phone =
         String(
-          buyer?.phone||''
+          buyer?.phone || ''
         )
-        .replace(/\D/g,'');
+        .replace(/\D/g, '');
 
-      const cpf=
+      const cpf =
         cleanCPF(
           buyer?.cpf
         );
 
-      if(
-        !name||
-        !email||
-        cpf.length!==11
-      ){
+      if (
+        !name ||
+        !email ||
+        cpf.length !== 11
+      ) {
 
         return res.status(400).json({
 
           error:
             'Informe nome, e-mail e CPF válidos.'
+
         });
+
       }
 
-      if(phone.length!==11){
+      if (phone.length !== 11) {
 
         return res.status(400).json({
 
           error:
             'Informe um telefone válido.'
+
         });
+
       }
 
-      const{
+      const {
         normalized,
         total
-      }=
+      } =
         calculateItems(items);
 
-      const orderId=
+      const orderId =
         crypto.randomUUID();
 
-      const{
+      const {
         first_name,
         last_name
-      }=
+      } =
         splitName(name);
 
-      const body={
+      const body = {
 
         transaction_amount:
           Number(
@@ -1229,7 +994,7 @@ app.post(
           `${EVENT_NAME} - ${
             normalized
               .map(
-                i=>
+                i =>
                   `${i.quantity}x ${i.name}`
               )
               .join(', ')
@@ -1241,7 +1006,7 @@ app.post(
         external_reference:
           orderId,
 
-        payer:{
+        payer: {
 
           email,
 
@@ -1249,54 +1014,62 @@ app.post(
 
           last_name,
 
-          identification:{
+          identification: {
 
             type:
               'CPF',
 
             number:
               cpf
+
           }
+
         }
+
       };
 
-      if(PUBLIC_BASE_URL){
+      if (PUBLIC_BASE_URL) {
 
-        body.notification_url=
+        body.notification_url =
           `${PUBLIC_BASE_URL}/api/mercadopago/webhook`;
+
       }
 
-      const payment=
+      const payment =
         await mpRequest(
           'https://api.mercadopago.com/v1/payments',
           {
 
-            method:'POST',
+            method:
+              'POST',
 
-            headers:{
+            headers: {
 
               'X-Idempotency-Key':
                 crypto.randomUUID()
+
             },
 
             body:
               JSON.stringify(body)
+
           }
         );
 
-      const tx=
+      const tx =
         payment
           .point_of_interaction
           ?.transaction_data;
 
-      if(
-        !tx?.qr_code||
+      if (
+        !tx?.qr_code ||
         !tx?.qr_code_base64
-      ){
+      ) {
 
         throw new Error(
           'Mercado Pago não retornou o QR Code PIX.'
         );
+
       }
 
       await db(
@@ -1317,13 +1090,14 @@ app.post(
           )
         `,
         [
+
           orderId,
 
           String(
             payment.id
           ),
 
-          payment.status||
+          payment.status ||
             'pending',
 
           total,
@@ -1339,6 +1113,7 @@ app.post(
           JSON.stringify(
             normalized
           )
+
         ]
       );
 
@@ -1357,310 +1132,370 @@ app.post(
 
         qrCodeBase64:
           tx.qr_code_base64
+
       });
 
-    }catch(e){
+    } catch (e) {
 
       console.error(e);
 
       res.status(400).json({
 
         error:
-          e.message||
+          e.message ||
           'Não foi possível gerar o PIX.'
+
       });
+
     }
+
   }
 );
+
 /* ========================================================
    CRIAR PAGAMENTO COM CARTÃO
    ======================================================== */
 
-app.post('/api/create-card-payment',async(req,res)=>{
+app.post(
+  '/api/create-card-payment',
+  async (req, res) => {
 
-  try{
+    try {
 
-    const{
-      buyer,
-      items,
-      token,
-      paymentMethodId,
-      issuerId,
-      installments
-    }=
-      req.body||{};
+      const {
+        buyer,
+        items,
+        token,
+        paymentMethodId,
+        issuerId,
+        installments
+      } =
+        req.body || {};
 
-    const name=
-      String(
-        buyer?.name||''
-      ).trim();
+      const name =
+        String(
+          buyer?.name || ''
+        ).trim();
 
-    const email=
-      String(
-        buyer?.email||''
-      ).trim();
+      const email =
+        String(
+          buyer?.email || ''
+        ).trim();
 
-    const phone=
-      String(
-        buyer?.phone||''
-      ).replace(/\D/g,'');
+      const phone =
+        String(
+          buyer?.phone || ''
+        )
+        .replace(/\D/g, '');
 
-    const cpf=
-      cleanCPF(
-        buyer?.cpf
-      );
+      const cpf =
+        cleanCPF(
+          buyer?.cpf
+        );
 
-    const cardToken=
-      String(
-        token||''
-      ).trim();
+      const cardToken =
+        String(
+          token || ''
+        ).trim();
 
-    const methodId=
-      String(
-        paymentMethodId||''
-      ).trim();
+      const methodId =
+        String(
+          paymentMethodId || ''
+        ).trim();
 
-    const parsedIssuerId=
-      issuerId
-        ?String(issuerId)
-        :undefined;
+      const parsedIssuerId =
+        issuerId
+          ? String(issuerId)
+          : undefined;
 
-    const parsedInstallments=
-      Number(
-        installments||1
-      );
-
-    if(
-      !name||
-      !email||
-      cpf.length!==11
-    ){
-
-      return res.status(400).json({
-        error:
-          'Informe nome, e-mail e CPF válidos.'
-      });
-    }
-
-    if(phone.length!==11){
-
-      return res.status(400).json({
-        error:
-          'Informe um telefone válido.'
-      });
-    }
-
-    if(!cardToken||!methodId){
-
-      return res.status(400).json({
-        error:
-          'Não foi possível tokenizar o cartão. Verifique os dados.'
-      });
-    }
-
-    if(
-      !Number.isInteger(
-        parsedInstallments
-      )||
-      parsedInstallments<1||
-      parsedInstallments>24
-    ){
-
-      return res.status(400).json({
-        error:
-          'Quantidade de parcelas inválida.'
-      });
-    }
-
-    const{
-      normalized,
-      total
-    }=
-      calculateItems(items);
-
-    const orderId=
-      crypto.randomUUID();
-
-    const{
-      first_name,
-      last_name
-    }=
-      splitName(name);
-
-    const body={
-
-      transaction_amount:
+      const parsedInstallments =
         Number(
-          total.toFixed(2)
-        ),
+          installments || 1
+        );
 
-      description:
-        `${EVENT_NAME} - ${
-          normalized
-            .map(
-              i=>
-                `${i.quantity}x ${i.name}`
-            )
-            .join(', ')
-        }`,
+      if (
+        !name ||
+        !email ||
+        cpf.length !== 11
+      ) {
 
-      payment_method_id:
-        methodId,
+        return res.status(400).json({
 
-      token:
-        cardToken,
+          error:
+            'Informe nome, e-mail e CPF válidos.'
 
-      installments:
-        parsedInstallments,
+        });
 
-      external_reference:
-        orderId,
-
-      payer:{
-
-        email,
-
-        first_name,
-
-        last_name,
-
-        identification:{
-          type:'CPF',
-          number:cpf
-        }
       }
-    };
 
-    if(parsedIssuerId){
+      if (phone.length !== 11) {
 
-      body.issuer_id=
-        parsedIssuerId;
-    }
+        return res.status(400).json({
 
-    if(PUBLIC_BASE_URL){
+          error:
+            'Informe um telefone válido.'
 
-      body.notification_url=
-        `${PUBLIC_BASE_URL}/api/mercadopago/webhook`;
-    }
+        });
 
-    const payment=
-      await mpRequest(
-        'https://api.mercadopago.com/v1/payments',
-        {
+      }
 
-          method:'POST',
+      if (
+        !cardToken ||
+        !methodId
+      ) {
 
-          headers:{
-            'X-Idempotency-Key':
-              crypto.randomUUID()
-          },
+        return res.status(400).json({
 
-          body:
-            JSON.stringify(body)
+          error:
+            'Não foi possível tokenizar o cartão. Verifique os dados.'
+
+        });
+
+      }
+
+      if (
+        !Number.isInteger(
+          parsedInstallments
+        ) ||
+        parsedInstallments < 1 ||
+        parsedInstallments > 24
+      ) {
+
+        return res.status(400).json({
+
+          error:
+            'Quantidade de parcelas inválida.'
+
+        });
+
+      }
+
+      const {
+        normalized,
+        total
+      } =
+        calculateItems(items);
+
+      const orderId =
+        crypto.randomUUID();
+
+      const {
+        first_name,
+        last_name
+      } =
+        splitName(name);
+
+      const body = {
+
+        transaction_amount:
+          Number(
+            total.toFixed(2)
+          ),
+
+        description:
+          `${EVENT_NAME} - ${
+            normalized
+              .map(
+                i =>
+                  `${i.quantity}x ${i.name}`
+              )
+              .join(', ')
+          }`,
+
+        payment_method_id:
+          methodId,
+
+        token:
+          cardToken,
+
+        installments:
+          parsedInstallments,
+
+        external_reference:
+          orderId,
+
+        payer: {
+
+          email,
+
+          first_name,
+
+          last_name,
+
+          identification: {
+
+            type:
+              'CPF',
+
+            number:
+              cpf
+
+          }
+
         }
-      );
 
-    await db(
-      `
-        INSERT INTO orders(
-          order_id,
-          payment_id,
-          status,
+      };
+
+      if (parsedIssuerId) {
+
+        body.issuer_id =
+          parsedIssuerId;
+
+      }
+
+      if (PUBLIC_BASE_URL) {
+
+        body.notification_url =
+          `${PUBLIC_BASE_URL}/api/mercadopago/webhook`;
+
+      }
+
+      const payment =
+        await mpRequest(
+          'https://api.mercadopago.com/v1/payments',
+          {
+
+            method:
+              'POST',
+
+            headers: {
+
+              'X-Idempotency-Key':
+                crypto.randomUUID()
+
+            },
+
+            body:
+              JSON.stringify(body)
+
+          }
+        );
+
+      await db(
+        `
+          INSERT INTO orders(
+            order_id,
+            payment_id,
+            status,
+            total,
+            buyer_name,
+            buyer_email,
+            buyer_cpf,
+            buyer_phone,
+            items
+          )
+          VALUES(
+            $1,$2,$3,$4,$5,$6,$7,$8,$9
+          )
+        `,
+        [
+
+          orderId,
+
+          String(
+            payment.id
+          ),
+
+          payment.status ||
+            'pending',
+
           total,
-          buyer_name,
-          buyer_email,
-          buyer_cpf,
-          buyer_phone,
-          items
-        )
-        VALUES(
-          $1,$2,$3,$4,$5,$6,$7,$8,$9
-        )
-      `,
-      [
-        orderId,
-        String(payment.id),
-        payment.status||'pending',
-        total,
-        name,
-        email,
-        cpf,
-        phone,
-        JSON.stringify(normalized)
-      ]
-    );
 
-    if(
-      payment.status==='approved'
-    ){
+          name,
 
-      await fulfillLocked(
-        orderId
+          email,
+
+          cpf,
+
+          phone,
+
+          JSON.stringify(
+            normalized
+          )
+
+        ]
       );
+
+      if (
+        payment.status ===
+        'approved'
+      ) {
+
+        await fulfillLocked(
+          orderId
+        );
+
+      }
+
+      const finalOrder =
+        await getOrder(
+          orderId
+        );
+
+      res.json({
+
+        orderId,
+
+        paymentId:
+          String(payment.id),
+
+        status:
+          finalOrder?.status ||
+          payment.status,
+
+        statusDetail:
+          payment.status_detail ||
+          null
+
+      });
+
+    } catch (e) {
+
+      console.error(
+        'Erro pagamento cartão:',
+        e
+      );
+
+      res.status(400).json({
+
+        error:
+          e.message ||
+          'Não foi possível processar o pagamento com cartão.'
+
+      });
+
     }
 
-    const finalOrder=
-      await getOrder(
-        orderId
-      );
-
-    res.json({
-
-      orderId,
-
-      paymentId:
-        String(payment.id),
-
-      status:
-        finalOrder?.status||
-        payment.status,
-
-      statusDetail:
-        payment.status_detail||
-        null
-    });
-
-  }catch(e){
-
-    console.error(
-      'Erro pagamento cartão:',
-      e
-    );
-
-    res.status(400).json({
-
-      error:
-        e.message||
-        'Não foi possível processar o pagamento com cartão.'
-    });
   }
-});
+);
 
 /* ========================================================
-   STATUS PAGAMENTO
+   STATUS DO PAGAMENTO
    ======================================================== */
 
 app.get(
   '/api/payment-status/:orderId',
-  async(req,res)=>{
+  async (req, res) => {
 
-    try{
+    try {
 
-      const order=
+      const order =
         await getOrder(
           req.params.orderId
         );
 
-      if(!order){
+      if (!order) {
 
         return res.status(404).json({
 
           error:
             'Compra não encontrada.'
+
         });
+
       }
 
-      const payment=
+      const payment =
         await mpRequest(
           `https://api.mercadopago.com/v1/payments/${encodeURIComponent(
             order.paymentId
@@ -1676,23 +1511,27 @@ app.get(
           WHERE order_id=$2
         `,
         [
-          payment.status||
+
+          payment.status ||
             order.status,
 
           order.orderId
+
         ]
       );
 
-      const finalOrder=
-        payment.status==='approved'
-          ?await fulfillLocked(
+      const finalOrder =
+        payment.status === 'approved'
+
+          ? await fulfillLocked(
               order.orderId
             )
-          :await getOrder(
+
+          : await getOrder(
               order.orderId
             );
 
-      const ticketCount=
+      const ticketCount =
         await countTickets(
           order.orderId
         );
@@ -1706,7 +1545,7 @@ app.get(
           finalOrder.paymentId,
 
         ticketsReady:
-          ticketCount===
+          ticketCount ===
           totalTicketCount(
             finalOrder
           ),
@@ -1717,19 +1556,23 @@ app.get(
           ),
 
         emailError:
-          finalOrder.emailError||
+          finalOrder.emailError ||
           null
+
       });
 
-    }catch(e){
+    } catch (e) {
 
       res.status(500).json({
 
         error:
-          e.message||
+          e.message ||
           'Não foi possível consultar o pagamento.'
+
       });
+
     }
+
   }
 );
 
@@ -1739,31 +1582,31 @@ app.get(
 
 app.post(
   '/api/mercadopago/webhook',
-  async(req,res)=>{
+  async (req, res) => {
 
     res.sendStatus(200);
 
-    try{
+    try {
 
-      const paymentId=
-        req.body?.data?.id||
-        req.query?.id||
+      const paymentId =
+        req.body?.data?.id ||
+        req.query?.id ||
         req.body?.id;
 
-      if(!paymentId)
+      if (!paymentId)
         return;
 
-      const payment=
+      const payment =
         await mpRequest(
           `https://api.mercadopago.com/v1/payments/${encodeURIComponent(
             paymentId
           )}`
         );
 
-      const orderId=
+      const orderId =
         payment.external_reference;
 
-      if(orderId){
+      if (orderId) {
 
         await db(
           `
@@ -1774,81 +1617,94 @@ app.post(
             WHERE order_id=$2
           `,
           [
+
             payment.status,
+
             orderId
+
           ]
         );
 
-        if(
-          payment.status===
+        if (
+          payment.status ===
           'approved'
-        ){
+        ) {
 
           await fulfillLocked(
             orderId
           );
+
         }
+
       }
 
-    }catch(e){
+    } catch (e) {
 
       console.error(
         'Webhook Mercado Pago:',
         e
       );
+
     }
+
   }
 );
 
 /* ========================================================
-   QR CODE DO INGRESSO — IMAGEM PARA E-MAIL
+   QR CODE DO INGRESSO
    ======================================================== */
 
 app.get(
   '/api/tickets/qr/:ticketId.png',
-  async(req,res)=>{
+  async (req, res) => {
 
-    try{
+    try {
 
-      const ticketId=
+      const ticketId =
         String(
-          req.params.ticketId||
-          ''
+          req.params.ticketId || ''
         ).trim();
 
-      if(
+      if (
         !/^BMD2-[A-F0-9]{10}$/i.test(
           ticketId
         )
-      ){
+      ) {
 
         return res
           .status(400)
-          .send('QR inválido.');
+          .send(
+            'QR inválido.'
+          );
+
       }
 
-      const r=
+      const r =
         await db(
           `
             SELECT qr_base64
             FROM tickets
-            WHERE UPPER(ticket_id)=UPPER($1)
+            WHERE UPPER(ticket_id)
+              = UPPER($1)
             LIMIT 1
           `,
           [ticketId]
         );
 
-      const base64=
+      const base64 =
         r.rows[0]?.qr_base64;
 
-      if(!base64){
+      if (!base64) {
 
         return res
           .status(404)
-          .send('QR não encontrado.');
+          .send(
+            'QR não encontrado.'
+          );
+
       }
 
-      const buffer=
+      const buffer =
         Buffer.from(
           base64,
           'base64'
@@ -1869,11 +1725,14 @@ app.get(
 
         'X-Content-Type-Options':
           'nosniff'
+
       });
 
-      return res.end(buffer);
+      return res.end(
+        buffer
+      );
 
-    }catch(e){
+    } catch (e) {
 
       console.error(
         'Erro ao entregar QR:',
@@ -1885,40 +1744,39 @@ app.get(
         .send(
           'Não foi possível carregar o QR.'
         );
+
     }
+
   }
 );
-
 /* ========================================================
-   VALIDAÇÃO PÚBLICA PELO QR
+   VALIDAÇÃO PÚBLICA DO INGRESSO
    ======================================================== */
 
-async function consumeTicketToken(
-  rawToken
-){
+async function consumeTicketToken(rawToken) {
 
-  const token=
-    String(
-      rawToken||''
-    ).trim();
+  const token =
+    String(rawToken || '').trim();
 
-  if(!token){
+  if (!token) {
 
-    return{
+    return {
 
-      status:400,
+      status: 400,
 
-      body:{
-        valid:false,
-        error:'QR Code inválido.'
+      body: {
+        valid: false,
+        error: 'QR Code inválido.'
       }
+
     };
+
   }
 
-  const h=
+  const h =
     hashToken(token);
 
-  const r=
+  const r =
     await db(
       `
         SELECT
@@ -1932,38 +1790,43 @@ async function consumeTicketToken(
       [h]
     );
 
-  const t=
+  const t =
     r.rows[0];
 
-  if(!t){
+  if (!t) {
 
-    return{
+    return {
 
-      status:404,
+      status: 404,
 
-      body:{
-        valid:false,
-        error:'Ingresso não encontrado.'
+      body: {
+        valid: false,
+        error: 'Ingresso não encontrado.'
       }
+
     };
+
   }
 
-  if(
-    t.order_status!=='approved'
-  ){
+  if (
+    t.order_status !==
+    'approved'
+  ) {
 
-    return{
+    return {
 
-      status:400,
+      status: 400,
 
-      body:{
-        valid:false,
-        error:'Pagamento não aprovado.'
+      body: {
+        valid: false,
+        error: 'Pagamento não aprovado.'
       }
+
     };
+
   }
 
-  const used=
+  const used =
     await db(
       `
         UPDATE tickets
@@ -1975,9 +1838,9 @@ async function consumeTicketToken(
       [t.ticket_id]
     );
 
-  if(!used.rows[0]){
+  if (!used.rows[0]) {
 
-    const fresh=
+    const fresh =
       await db(
         `
           SELECT
@@ -1991,56 +1854,62 @@ async function consumeTicketToken(
         [t.ticket_id]
       );
 
-    const already=
+    const already =
       fresh.rows[0];
 
-    return{
+    return {
 
-      status:409,
+      status: 409,
 
-      body:{
+      body: {
 
-        valid:false,
+        valid: false,
 
-        used:true,
+        used: true,
 
         error:
           'Este ingresso já foi utilizado.',
 
         ticket:
           already
-            ?{
-              ticketId:
-                already.ticket_id,
+            ? {
 
-              batchName:
-                already.batch_name,
+                ticketId:
+                  already.ticket_id,
 
-              buyerName:
-                already.buyer_name,
+                batchName:
+                  already.batch_name,
 
-              usedAt:
-                already.used_at
-            }
-            :undefined
+                buyerName:
+                  already.buyer_name,
+
+                usedAt:
+                  already.used_at
+
+              }
+
+            : undefined
+
       }
+
     };
+
   }
 
-  return{
+  return {
 
-    status:200,
+    status: 200,
 
-    body:{
+    body: {
 
-      valid:true,
+      valid: true,
 
-      used:false,
+      used: false,
 
       message:
         'Entrada liberada.',
 
-      ticket:{
+      ticket: {
 
         ticketId:
           t.ticket_id,
@@ -2053,18 +1922,26 @@ async function consumeTicketToken(
 
         usedAt:
           used.rows[0].used_at
+
       }
+
     }
+
   };
+
 }
+
+/* ========================================================
+   ESCANEAR QR PUBLICAMENTE
+   ======================================================== */
 
 app.get(
   '/api/tickets/scan',
-  async(req,res)=>{
+  async (req, res) => {
 
-    try{
+    try {
 
-      const result=
+      const result =
         await consumeTicketToken(
           req.query.ticket
         );
@@ -2073,7 +1950,7 @@ app.get(
         .status(result.status)
         .json(result.body);
 
-    }catch(e){
+    } catch (e) {
 
       console.error(
         'Erro na validação pública:',
@@ -2082,27 +1959,30 @@ app.get(
 
       return res.status(500).json({
 
-        valid:false,
+        valid: false,
 
         error:
           'Não foi possível validar o ingresso.'
+
       });
+
     }
+
   }
 );
 
 /* ========================================================
-   VALIDAR INGRESSO
+   VALIDAR INGRESSO PELO ADMIN
    ======================================================== */
 
 app.post(
   '/api/tickets/validate',
   requireAdmin,
-  async(req,res)=>{
+  async (req, res) => {
 
-    try{
+    try {
 
-      const result=
+      const result =
         await consumeTicketToken(
           req.body?.token
         );
@@ -2111,7 +1991,7 @@ app.post(
         .status(result.status)
         .json(result.body);
 
-    }catch(e){
+    } catch (e) {
 
       console.error(
         'Erro ao validar ingresso:',
@@ -2120,13 +2000,16 @@ app.post(
 
       return res.status(500).json({
 
-        valid:false,
+        valid: false,
 
         error:
-          e.message||
+          e.message ||
           'Não foi possível validar o ingresso.'
+
       });
+
     }
+
   }
 );
 
@@ -2137,71 +2020,75 @@ app.post(
 app.post(
   '/api/tickets/resend/:orderId',
   requireAdmin,
-  async(req,res)=>{
+  async (req, res) => {
 
-    try{
+    try {
 
-      const order=
+      const order =
         await getOrder(
           req.params.orderId
         );
 
-      if(!order){
+      if (!order) {
 
         return res.status(404).json({
 
           error:
             'Compra não encontrada.'
+
         });
+
       }
 
-      if(
-        order.status!=='approved'
-      ){
+      if (
+        order.status !==
+        'approved'
+      ) {
 
         return res.status(400).json({
 
           error:
             'Pagamento ainda não aprovado.'
+
         });
+
       }
 
-      const tickets=
+      const tickets =
         await getTickets(
           order.orderId
         );
 
-      if(
-        tickets.length!==
+      if (
+        tickets.length !==
         totalTicketCount(order)
-      ){
+      ) {
 
         await fulfillLocked(
           order.orderId
         );
+
       }
 
-      const fresh=
+      const fresh =
         await getOrder(
           order.orderId
         );
 
-      const ts=
+      const ts =
         await getTickets(
           order.orderId
         );
 
-      if(!mailReady()){
+      if (!gmailReady()) {
 
         throw new Error(
-          'Gmail não configurado.'
+          'Gmail API não configurada.'
         );
+
       }
 
-      await mailer.sendMail({
-
-        from:
-          EMAIL_FROM,
+      await sendGmail({
 
         to:
           fresh.buyer.email,
@@ -2225,10 +2112,12 @@ app.post(
 
               ${ts
                 .map(ticketHtml)
-                .join('')}
+                .join('')
+              }
 
             </div>
           `
+
       });
 
       await db(
@@ -2245,21 +2134,25 @@ app.post(
 
       res.json({
 
-        ok:true,
+        ok: true,
 
         message:
           'Ingressos reenviados.'
+
       });
 
-    }catch(e){
+    } catch (e) {
 
       res.status(500).json({
 
         error:
-          e.message||
+          e.message ||
           'Não foi possível reenviar os ingressos.'
+
       });
+
     }
+
   }
 );
 
@@ -2270,11 +2163,11 @@ app.post(
 app.get(
   '/api/tickets/stats',
   requireAdmin,
-  async(req,res)=>{
+  async (req, res) => {
 
-    try{
+    try {
 
-      const a=
+      const a =
         await db(
           `
             SELECT
@@ -2284,10 +2177,11 @@ app.get(
           `
         );
 
-      const s=
+      const s =
         await db(
           `
             SELECT
+
               COUNT(*)::int AS n,
 
               COUNT(*)
@@ -2299,10 +2193,10 @@ app.get(
           `
         );
 
-      const sold=
+      const sold =
         s.rows[0].n;
 
-      const used=
+      const used =
         s.rows[0].used;
 
       res.json({
@@ -2319,18 +2213,22 @@ app.get(
         availableTickets:
           Math.max(
             0,
-            sold-used
+            sold - used
           )
+
       });
 
-    }catch(e){
+    } catch (e) {
 
       res.status(500).json({
 
         error:
           e.message
+
       });
+
     }
+
   }
 );
 
@@ -2341,78 +2239,84 @@ app.get(
 app.post(
   '/api/admin/test-order',
   requireAdmin,
-  async(req,res)=>{
+  async (req, res) => {
 
-    try{
+    try {
 
-      const body=
-        req.body||{};
+      const body =
+        req.body || {};
 
-      const name=
+      const name =
         String(
-          body.name||
+          body.name ||
           'Cliente de Teste'
         ).trim();
 
-      const email=
+      const email =
         String(
-          body.email||
+          body.email ||
           ''
         ).trim();
 
-      const phone=
+      const phone =
         String(
-          body.phone||
+          body.phone ||
           '61999999999'
         )
-        .replace(/\D/g,'');
+        .replace(/\D/g, '');
 
-      const cpf=
+      const cpf =
         cleanCPF(
-          body.cpf||
+          body.cpf ||
           '11144477735'
         );
 
-      const batchId=
+      const batchId =
         String(
-          body.batchId||
+          body.batchId ||
           'pre'
         );
 
-      if(!email){
+      if (!email) {
 
         return res.status(400).json({
 
           error:
             'Informe o e-mail que receberá o ingresso de teste.'
+
         });
+
       }
 
-      if(!batches[batchId]){
+      if (!batches[batchId]) {
 
         return res.status(400).json({
 
           error:
             'Tipo de ingresso de teste inválido.'
+
         });
+
       }
 
-      if(cpf.length!==11){
+      if (cpf.length !== 11) {
 
         return res.status(400).json({
 
           error:
             'CPF de teste inválido.'
+
         });
+
       }
 
-      const orderId=
+      const orderId =
         `TEST-${crypto.randomUUID()}`;
 
-      const paymentId=
+      const paymentId =
         `TEST-PAY-${crypto.randomUUID()}`;
 
-      const item={
+      const item = {
 
         id:
           batchId,
@@ -2425,6 +2329,7 @@ app.post(
 
         unit_price:
           batches[batchId].price
+
       };
 
       await db(
@@ -2462,24 +2367,25 @@ app.post(
           phone,
 
           JSON.stringify([item])
+
         ]
       );
 
-      const fulfilled=
+      const fulfilled =
         await fulfillLocked(
           orderId
         );
 
-      const tickets=
+      const tickets =
         await getTickets(
           orderId
         );
 
       res.json({
 
-        ok:true,
+        ok: true,
 
-        test:true,
+        test: true,
 
         orderId,
 
@@ -2492,11 +2398,11 @@ app.post(
           ),
 
         emailError:
-          fulfilled.emailError||
+          fulfilled.emailError ||
           null,
 
         tickets:
-          tickets.map(t=>({
+          tickets.map(t => ({
 
             ticketId:
               t.ticket_id,
@@ -2506,10 +2412,12 @@ app.post(
 
             usedAt:
               t.used_at
+
           }))
+
       });
 
-    }catch(e){
+    } catch (e) {
 
       console.error(
         'Compra de teste:',
@@ -2519,10 +2427,210 @@ app.post(
       res.status(500).json({
 
         error:
-          e.message||
+          e.message ||
           'Não foi possível criar a compra de teste.'
+
       });
+
     }
+
+  }
+);
+
+/* ========================================================
+   TESTE ESPECÍFICO DE CARTÃO
+   ======================================================== */
+
+app.post(
+  '/api/admin/test-card-payment',
+  requireAdmin,
+  async (req, res) => {
+
+    try {
+
+      const body =
+        req.body || {};
+
+      const name =
+        String(
+          body.name ||
+          'Cliente Teste Cartão'
+        ).trim();
+
+      const email =
+        String(
+          body.email ||
+          ''
+        ).trim();
+
+      const phone =
+        String(
+          body.phone ||
+          '61999999999'
+        )
+        .replace(/\D/g, '');
+
+      const cpf =
+        cleanCPF(
+          body.cpf ||
+          '11144477735'
+        );
+
+      const batchId =
+        String(
+          body.batchId ||
+          'pre'
+        );
+
+      if (!email) {
+
+        return res.status(400).json({
+
+          error:
+            'Informe o e-mail que receberá o teste.'
+
+        });
+
+      }
+
+      if (!batches[batchId]) {
+
+        return res.status(400).json({
+
+          error:
+            'Tipo de ingresso inválido.'
+
+        });
+
+      }
+
+      const orderId =
+        `TEST-CARD-${crypto.randomUUID()}`;
+
+      const paymentId =
+        `TEST-CARD-PAY-${crypto.randomUUID()}`;
+
+      const item = {
+
+        id:
+          batchId,
+
+        name:
+          batches[batchId].name,
+
+        quantity:
+          1,
+
+        unit_price:
+          batches[batchId].price
+
+      };
+
+      await db(
+        `
+          INSERT INTO orders(
+            order_id,
+            payment_id,
+            status,
+            total,
+            buyer_name,
+            buyer_email,
+            buyer_cpf,
+            buyer_phone,
+            items
+          )
+          VALUES(
+            $1,$2,'approved',
+            $3,$4,$5,$6,$7,$8
+          )
+        `,
+        [
+
+          orderId,
+
+          paymentId,
+
+          batches[batchId].price,
+
+          name,
+
+          email,
+
+          cpf,
+
+          phone,
+
+          JSON.stringify([item])
+
+        ]
+      );
+
+      const fulfilled =
+        await fulfillLocked(
+          orderId
+        );
+
+      const tickets =
+        await getTickets(
+          orderId
+        );
+
+      res.json({
+
+        ok: true,
+
+        test: true,
+
+        simulatedPayment:
+          'card',
+
+        paymentStatus:
+          'approved',
+
+        orderId,
+
+        emailSent:
+          Boolean(
+            fulfilled.emailSentAt
+          ),
+
+        emailError:
+          fulfilled.emailError ||
+          null,
+
+        tickets:
+          tickets.map(t => ({
+
+            ticketId:
+              t.ticket_id,
+
+            batchName:
+              t.batch_name,
+
+            usedAt:
+              t.used_at
+
+          }))
+
+      });
+
+    } catch (e) {
+
+      console.error(
+        'Teste cartão:',
+        e
+      );
+
+      res.status(500).json({
+
+        error:
+          e.message ||
+          'Não foi possível executar o teste de cartão.'
+
+      });
+
+    }
+
   }
 );
 
@@ -2533,11 +2641,11 @@ app.post(
 app.delete(
   '/api/admin/test-orders',
   requireAdmin,
-  async(req,res)=>{
+  async (req, res) => {
 
-    try{
+    try {
 
-      const result=
+      const result =
         await db(
           `
             DELETE FROM orders
@@ -2548,13 +2656,14 @@ app.delete(
 
       res.json({
 
-        ok:true,
+        ok: true,
 
         deleted:
           result.rowCount
+
       });
 
-    }catch(e){
+    } catch (e) {
 
       console.error(
         'Excluir testes:',
@@ -2564,10 +2673,13 @@ app.delete(
       res.status(500).json({
 
         error:
-          e.message||
+          e.message ||
           'Não foi possível excluir as compras de teste.'
+
       });
+
     }
+
   }
 );
 
@@ -2577,7 +2689,7 @@ app.delete(
 
 app.get(
   '/{*splat}',
-  (req,res)=>{
+  (req, res) => {
 
     res.sendFile(
       path.join(
@@ -2585,37 +2697,43 @@ app.get(
         'index.html'
       )
     );
+
   }
 );
 
 /* ========================================================
-   INICIAR
+   INICIAR SERVIDOR
    ======================================================== */
 
 initDb()
-  .then(()=>{
+  .then(() => {
 
     app.listen(
       PORT,
       '0.0.0.0',
-      ()=>{
+      () => {
 
         console.log(
           `${EVENT_NAME} em http://0.0.0.0:${PORT}`
         );
 
         console.log(
-          'E-mail: Gmail/Nodemailer'
+          'E-mail: Gmail API'
         );
 
         console.log(
-          `EMAIL_FROM: ${EMAIL_FROM}`
+          `GMAIL_USER: ${GMAIL_USER}`
         );
+
+        console.log(
+          `Gmail configurado: ${gmailReady()}`
+        );
+
       }
     );
 
   })
-  .catch(e=>{
+  .catch(e => {
 
     console.error(
       'Falha ao inicializar banco:',
@@ -2623,4 +2741,5 @@ initDb()
     );
 
     process.exit(1);
+
   });
