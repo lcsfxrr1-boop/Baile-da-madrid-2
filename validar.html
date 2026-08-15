@@ -1,72 +1,768 @@
 <!doctype html>
 <html lang="pt-BR">
+
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+
 <title>Validar ingresso — Baile da Madrid 2.0</title>
+
 <style>
-*{box-sizing:border-box}body{margin:0;min-height:100vh;background:#070707;color:#fff;font-family:Arial,Helvetica,sans-serif;padding:24px}main{max-width:620px;margin:0 auto}.brand{font-size:12px;letter-spacing:3px;color:#ff3040;font-weight:900}.card{background:#111;border:1px solid #2b2b2b;border-radius:20px;padding:24px;margin-top:16px;box-shadow:0 15px 45px rgba(0,0,0,.35)}h1{font-size:30px;margin:8px 0 6px}p{color:#aaa;line-height:1.5}.field{display:grid;gap:8px;margin:16px 0}.field label{font-size:12px;color:#aaa;font-weight:700}.field input{width:100%;padding:14px;border-radius:10px;border:1px solid #333;background:#080808;color:#fff;font-size:16px}.row{display:flex;gap:10px;flex-wrap:wrap}.btn{border:0;border-radius:10px;padding:14px 18px;background:#e51d2a;color:#fff;font-weight:900;cursor:pointer}.btn.secondary{background:#222;border:1px solid #444}.reader{width:100%;overflow:hidden;border-radius:14px;margin-top:16px;background:#000}.result{display:none;margin-top:18px;padding:18px;border-radius:14px}.result.ok{display:block;background:#0d2a18;border:1px solid #2d8c50}.result.bad{display:block;background:#2a0d10;border:1px solid #8c2d38}.result h2{margin:0 0 8px}.small{font-size:12px;color:#888}.hidden{display:none!important}
+*{
+  box-sizing:border-box
+}
+
+body{
+  margin:0;
+  min-height:100vh;
+  background:#070707;
+  color:#fff;
+  font-family:Arial,Helvetica,sans-serif;
+  padding:24px
+}
+
+main{
+  max-width:620px;
+  margin:0 auto
+}
+
+.brand{
+  font-size:12px;
+  letter-spacing:3px;
+  color:#ff3040;
+  font-weight:900
+}
+
+.card{
+  background:#111;
+  border:1px solid #2b2b2b;
+  border-radius:20px;
+  padding:24px;
+  margin-top:16px;
+  box-shadow:0 15px 45px rgba(0,0,0,.35)
+}
+
+h1{
+  font-size:30px;
+  margin:8px 0 6px
+}
+
+p{
+  color:#aaa;
+  line-height:1.5
+}
+
+.field{
+  display:grid;
+  gap:8px;
+  margin:16px 0
+}
+
+.field label{
+  font-size:12px;
+  color:#aaa;
+  font-weight:700
+}
+
+.field input{
+  width:100%;
+  padding:14px;
+  border-radius:10px;
+  border:1px solid #333;
+  background:#080808;
+  color:#fff;
+  font-size:16px
+}
+
+.row{
+  display:flex;
+  gap:10px;
+  flex-wrap:wrap
+}
+
+.btn{
+  border:0;
+  border-radius:10px;
+  padding:14px 18px;
+  background:#e51d2a;
+  color:#fff;
+  font-weight:900;
+  cursor:pointer
+}
+
+.btn.secondary{
+  background:#222;
+  border:1px solid #444
+}
+
+.btn:disabled{
+  opacity:.5;
+  cursor:not-allowed
+}
+
+.reader{
+  width:100%;
+  overflow:hidden;
+  border-radius:14px;
+  margin-top:16px;
+  background:#000
+}
+
+.result{
+  display:none;
+  margin-top:18px;
+  padding:18px;
+  border-radius:14px
+}
+
+.result.ok{
+  display:block;
+  background:#0d2a18;
+  border:1px solid #2d8c50
+}
+
+.result.bad{
+  display:block;
+  background:#2a0d10;
+  border:1px solid #8c2d38
+}
+
+.result h2{
+  margin:0 0 8px
+}
+
+.small{
+  font-size:12px;
+  color:#888
+}
+
+.hidden{
+  display:none!important
+}
 </style>
+
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+
 </head>
+
 <body>
+
 <main>
-  <div class="brand">PORTARIA</div>
-  <h1>Validar ingresso</h1>
-  <p>Use esta página somente no celular da equipe de entrada. Cada QR Code aprovado pode ser utilizado uma única vez.</p>
 
-  <section class="card" id="login-card">
-    <div class="field"><label>CHAVE DA PORTARIA</label><input id="admin-token" type="password" autocomplete="off" placeholder="Digite o ADMIN_TOKEN"></div>
-    <button class="btn" id="save-token">Entrar</button>
-    <p class="small">A chave não fica no QR Code do cliente.</p>
+  <div class="brand">
+    PORTARIA
+  </div>
+
+  <h1>
+    Validar ingresso
+  </h1>
+
+  <p>
+    Use esta página somente no celular da equipe de entrada.
+    Cada QR Code aprovado pode ser utilizado uma única vez.
+  </p>
+
+
+  <!-- LOGIN -->
+
+  <section
+    class="card"
+    id="login-card"
+  >
+
+    <div class="field">
+
+      <label>
+        CHAVE DA PORTARIA
+      </label>
+
+      <input
+        id="admin-token"
+        type="password"
+        autocomplete="off"
+        placeholder="Digite o ADMIN_TOKEN"
+      >
+
+    </div>
+
+    <button
+      class="btn"
+      id="save-token"
+    >
+      Entrar
+    </button>
+
+    <p class="small">
+      A chave não fica armazenada no QR Code do cliente.
+    </p>
+
   </section>
 
-  <section class="card hidden" id="scanner-card">
-    <div class="row"><button class="btn" id="start-camera">Abrir câmera</button><button class="btn secondary" id="stop-camera">Parar câmera</button></div>
-    <div id="reader" class="reader"></div>
-    <div class="field"><label>OU COLE O TOKEN DO QR</label><input id="manual-token" placeholder="Token do ingresso"></div>
-    <button class="btn" id="validate-manual">Validar ingresso</button>
-    <div id="result" class="result"></div>
+
+  <!-- SCANNER -->
+
+  <section
+    class="card hidden"
+    id="scanner-card"
+  >
+
+    <div class="row">
+
+      <button
+        class="btn"
+        id="start-camera"
+      >
+        Abrir câmera
+      </button>
+
+      <button
+        class="btn secondary"
+        id="stop-camera"
+      >
+        Parar câmera
+      </button>
+
+    </div>
+
+
+    <div
+      id="reader"
+      class="reader"
+    ></div>
+
+
+    <div class="field">
+
+      <label>
+        OU COLE O LINK / TOKEN DO QR
+      </label>
+
+      <input
+        id="manual-token"
+        placeholder="Cole aqui o conteúdo do QR Code"
+        autocomplete="off"
+      >
+
+    </div>
+
+
+    <button
+      class="btn"
+      id="validate-manual"
+    >
+      Validar ingresso
+    </button>
+
+
+    <div
+      id="result"
+      class="result"
+    ></div>
+
   </section>
+
 </main>
+
+
 <script>
-let adminToken=sessionStorage.getItem('baile_admin_token')||'';
-let scanner=null;
-const $=id=>document.getElementById(id);
+
+let adminToken =
+  sessionStorage.getItem('baile_admin_token') || '';
+
+let scanner = null;
+
+const $ = id =>
+  document.getElementById(id);
+
+
+/* =====================================================
+   MOSTRAR SCANNER
+   ===================================================== */
+
 function showScanner(){
+
   if(!adminToken)return;
-  $('login-card').classList.add('hidden');
-  $('scanner-card').classList.remove('hidden');
+
+  $('login-card')
+    .classList
+    .add('hidden');
+
+  $('scanner-card')
+    .classList
+    .remove('hidden');
 }
-if(adminToken)showScanner();
-$('save-token').onclick=()=>{const v=$('admin-token').value.trim();if(!v)return alert('Digite a chave.');adminToken=v;sessionStorage.setItem('baile_admin_token',v);showScanner();};
-function extractToken(value){
-  try{const u=new URL(value);return u.searchParams.get('ticket')||value;}catch{return value;}
+
+
+/* =====================================================
+   LOGIN
+   ===================================================== */
+
+if(adminToken){
+  showScanner();
 }
-async function validateToken(token){
-  token=extractToken(String(token||'').trim());
-  if(!token)return;
-  const r=await fetch('/api/tickets/validate',{method:'POST',headers:{'Content-Type':'application/json','x-admin-token':adminToken},body:JSON.stringify({token})});
-  const data=await r.json();
-  const box=$('result');
-  box.className='result '+(data.valid?'ok':'bad');
-  box.innerHTML=data.valid
-    ? `<h2>✅ ENTRADA LIBERADA</h2><div><b>${data.ticket.buyerName}</b></div><div>${data.ticket.batchName}</div><div class="small">${data.ticket.ticketId}</div>`
-    : `<h2>❌ ${data.used?'INGRESSO JÁ UTILIZADO':'INGRESSO INVÁLIDO'}</h2><div>${data.error||'Não foi possível validar.'}</div>${data.ticket?`<div class="small" style="margin-top:8px">${data.ticket.buyerName} — ${data.ticket.batchName}</div>`:''}`;
-}
-$('validate-manual').onclick=()=>validateToken($('manual-token').value);
-$('start-camera').onclick=async()=>{
-  if(scanner)return;
-  scanner=new Html5Qrcode('reader');
-  try{
-    await scanner.start({facingMode:'environment'},{fps:10,qrbox:{width:250,height:250}},async text=>{
-      await scanner.stop();scanner=null;await validateToken(text);
-    });
-  }catch(e){scanner=null;alert('Não foi possível abrir a câmera. Verifique a permissão do navegador e se o site usa HTTPS.');}
+
+
+$('save-token').onclick = () => {
+
+  const value =
+    $('admin-token')
+      .value
+      .trim();
+
+  if(!value){
+
+    alert(
+      'Digite a chave da portaria.'
+    );
+
+    return;
+  }
+
+  adminToken = value;
+
+  sessionStorage.setItem(
+    'baile_admin_token',
+    value
+  );
+
+  showScanner();
 };
-$('stop-camera').onclick=async()=>{if(scanner){try{await scanner.stop()}catch{}scanner=null;}};
-const initial=new URLSearchParams(location.search).get('ticket');
-if(initial){$('manual-token').value=initial;if(adminToken)validateToken(initial);}
+
+
+/* =====================================================
+   EXTRAIR TOKEN DO QR
+   ===================================================== */
+
+function extractToken(value){
+
+  value =
+    String(value || '')
+      .trim();
+
+  if(!value){
+    return '';
+  }
+
+
+  /*
+   * Caso o QR contenha:
+   *
+   * https://site.com/validar.html?ticket=TOKEN
+   *
+   * pegamos somente o TOKEN.
+   */
+
+  try{
+
+    const url =
+      new URL(value);
+
+    const ticket =
+      url.searchParams.get('ticket');
+
+    if(ticket){
+
+      return decodeURIComponent(
+        ticket
+      ).trim();
+
+    }
+
+  }catch(e){
+
+    /*
+     * Não é URL.
+     * Nesse caso tratamos o conteúdo
+     * diretamente como token.
+     */
+
+  }
+
+
+  return value;
+}
+
+
+/* =====================================================
+   MOSTRAR RESULTADO
+   ===================================================== */
+
+function showResult(data){
+
+  const box =
+    $('result');
+
+
+  if(data.valid){
+
+    box.className =
+      'result ok';
+
+
+    box.innerHTML = `
+
+      <h2>
+        ✅ ENTRADA LIBERADA
+      </h2>
+
+      <div>
+        <b>
+          ${escapeHtml(
+            data.ticket?.buyerName || ''
+          )}
+        </b>
+      </div>
+
+      <div>
+        ${escapeHtml(
+          data.ticket?.batchName || ''
+        )}
+      </div>
+
+      <div class="small">
+        ${escapeHtml(
+          data.ticket?.ticketId || ''
+        )}
+      </div>
+
+    `;
+
+    return;
+  }
+
+
+  box.className =
+    'result bad';
+
+
+  const title =
+    data.used
+      ? 'INGRESSO JÁ UTILIZADO'
+      : 'INGRESSO INVÁLIDO';
+
+
+  box.innerHTML = `
+
+    <h2>
+      ❌ ${title}
+    </h2>
+
+    <div>
+      ${escapeHtml(
+        data.error ||
+        'Não foi possível validar o ingresso.'
+      )}
+    </div>
+
+    ${
+      data.ticket
+        ? `
+          <div
+            class="small"
+            style="margin-top:8px"
+          >
+            ${escapeHtml(
+              data.ticket.buyerName || ''
+            )}
+            —
+            ${escapeHtml(
+              data.ticket.batchName || ''
+            )}
+          </div>
+        `
+        : ''
+    }
+
+  `;
+}
+
+
+/* =====================================================
+   ESCAPAR HTML
+   ===================================================== */
+
+function escapeHtml(value){
+
+  return String(value ?? '')
+    .replace(
+      /[&<>"']/g,
+      char => ({
+        '&':'&amp;',
+        '<':'&lt;',
+        '>':'&gt;',
+        '"':'&quot;',
+        "'":'&#39;'
+      }[char])
+    );
+}
+
+
+/* =====================================================
+   VALIDAR TOKEN
+   ===================================================== */
+
+async function validateToken(value){
+
+  const token =
+    extractToken(value);
+
+
+  if(!token){
+
+    showResult({
+      valid:false,
+      error:
+        'QR Code ou token vazio.'
+    });
+
+    return;
+  }
+
+
+  if(!adminToken){
+
+    showResult({
+      valid:false,
+      error:
+        'Informe a chave da portaria.'
+    });
+
+    return;
+  }
+
+
+  try{
+
+    const response =
+      await fetch(
+        '/api/tickets/validate',
+        {
+          method:'POST',
+
+          headers:{
+            'Content-Type':
+              'application/json',
+
+            'x-admin-token':
+              adminToken
+          },
+
+          body:
+            JSON.stringify({
+              token:token
+            })
+        }
+      );
+
+
+    let data;
+
+    try{
+
+      data =
+        await response.json();
+
+    }catch(e){
+
+      data = {
+        valid:false,
+        error:
+          'O servidor retornou uma resposta inválida.'
+      };
+
+    }
+
+
+    if(
+      response.status === 401
+    ){
+
+      showResult({
+        valid:false,
+        error:
+          'Chave da portaria incorreta.'
+      });
+
+      return;
+    }
+
+
+    if(
+      response.status === 404
+    ){
+
+      showResult({
+        valid:false,
+        error:
+          data.error ||
+          'Ingresso não encontrado.'
+      });
+
+      return;
+    }
+
+
+    showResult(data);
+
+  }catch(error){
+
+    console.error(
+      'Erro ao validar ingresso:',
+      error
+    );
+
+
+    showResult({
+
+      valid:false,
+
+      error:
+        'Não foi possível conectar ao servidor. Verifique a internet.'
+    });
+
+  }
+
+}
+
+
+/* =====================================================
+   VALIDAÇÃO MANUAL
+   ===================================================== */
+
+$('validate-manual').onclick = () => {
+
+  validateToken(
+    $('manual-token').value
+  );
+
+};
+
+
+/* =====================================================
+   CÂMERA
+   ===================================================== */
+
+$('start-camera').onclick =
+  async () => {
+
+    if(scanner)return;
+
+
+    scanner =
+      new Html5Qrcode(
+        'reader'
+      );
+
+
+    try{
+
+      await scanner.start(
+
+        {
+          facingMode:
+            'environment'
+        },
+
+        {
+          fps:10,
+
+          qrbox:{
+            width:250,
+            height:250
+          }
+        },
+
+        async decodedText => {
+
+          try{
+
+            await scanner.stop();
+
+          }catch(e){}
+
+
+          scanner = null;
+
+
+          $('manual-token').value =
+            decodedText;
+
+
+          await validateToken(
+            decodedText
+          );
+
+        }
+
+      );
+
+    }catch(error){
+
+      console.error(
+        'Câmera:',
+        error
+      );
+
+
+      scanner = null;
+
+
+      alert(
+        'Não foi possível abrir a câmera. Verifique a permissão do navegador e se o site usa HTTPS.'
+      );
+
+    }
+
+  };
+
+
+/* =====================================================
+   PARAR CÂMERA
+   ===================================================== */
+
+$('stop-camera').onclick =
+  async () => {
+
+    if(!scanner)return;
+
+    try{
+
+      await scanner.stop();
+
+    }catch(e){}
+
+    scanner = null;
+
+  };
+
+
+/* =====================================================
+   QR ABERTO DIRETAMENTE
+   ===================================================== */
+
+const initialToken =
+  new URLSearchParams(
+    window.location.search
+  ).get('ticket');
+
+
+if(initialToken){
+
+  $('manual-token').value =
+    initialToken;
+
+
+  if(adminToken){
+
+    validateToken(
+      initialToken
+    );
+
+  }
+
+}
+
 </script>
+
 </body>
-</html>
+  </html>
