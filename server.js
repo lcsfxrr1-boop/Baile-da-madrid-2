@@ -515,6 +515,8 @@ app.get(
           'Falha na Gmail API.'
       });
     }
+  }
+);
 /* ========================================================
    CONFIGURAÇÕES DO EVENTO
    ======================================================== */
@@ -906,7 +908,542 @@ async function getOrder(
       `
         SELECT *
         FROM orders
+
        /* ========================================================
+   ANEXOS DOS QR CODES
+   ======================================================== */
+
+function ticketAttachments(tickets) {
+
+  return tickets.map(t => {
+
+    const ticketId =
+      t.ticket_id ||
+      t.ticketId ||
+      '';
+
+    const qrBase64 =
+      t.qr_base64 ||
+      t.qrBase64 ||
+      '';
+
+    if (!ticketId || !qrBase64) {
+
+      throw new Error(
+        `QR Code ausente para o ingresso ${
+          ticketId || '(sem código)'
+        }.`
+      );
+
+    }
+
+    return {
+
+      content:
+        qrBase64,
+
+      filename:
+        `qr-${ticketId}.png`,
+
+      contentId:
+        `qr-${ticketId}`,
+
+      contentType:
+        'image/png'
+
+    };
+
+  });
+
+}
+
+/* ========================================================
+   GERAR INGRESSOS + ENVIAR PELA GMAIL API
+   ======================================================== */
+
+async function fulfillOrder(orderId) {
+
+  const order =
+    await getOrder(orderId);
+
+  if (
+    !order ||
+    order.status !== 'approved'
+  ) {
+
+    return order;
+
+  }
+
+  const expected =
+    totalTicketCount(order);
+
+  let current =
+    await countTickets(orderId);
+
+  if (current < expected) {
+
+    const flat = [];
+
+    for (
+      const item
+      of order.items
+    ) {
+
+      for (
+        let i = 0;
+        i < item.quantity;
+        i++
+      ) {
+
+        flat.push(item);
+
+      }
+
+    }
+
+    for (
+      let i = current;
+      i < expected;
+      i++
+    ) {
+
+      const t =
+        await buildTicket(
+          order,
+          flat[i]
+        );
+
+      try {
+
+        await db(
+          `
+            INSERT INTO tickets(
+              ticket_id,
+              order_id,
+              token_hash,
+              batch_id,
+              batch_name,
+              unit_price,
+              buyer_name,
+              buyer_email,
+              qr_base64
+            )
+            VALUES(
+              $1,$2,$3,$4,$5,
+              $6,$7,$8,$9
+            )
+          `,
+          [
+
+            t.ticketId,
+
+            orderId,
+
+            t.tokenHash,
+
+            t.batchId,
+
+            t.batchName,
+
+            t.unitPrice,
+
+            t.buyerName,
+
+            t.buyerEmail,
+
+            t.qrBase64
+
+          ]
+        );
+
+      } catch (e) {
+
+        if (e.code !== '23505') {
+
+          throw e;
+
+        }
+
+        i--;
+
+        continue;
+
+      }
+
+    }
+
+    current =
+      await countTickets(
+        orderId
+      );
+
+  }
+
+  /* ======================================================
+     ENVIO DO INGRESSO PELA GMAIL API
+     ====================================================== */
+
+  if (
+    current === expected &&
+    !order.emailSentAt
+  ) {
+
+    if (!gmailReady()) {
+
+      await db(
+        `
+          UPDATE orders
+          SET
+            email_error=$1,
+            updated_at=NOW()
+          WHERE order_id=$2
+        `,
+        [
+
+          'Gmail API não está configurada corretamente.',
+
+          orderId
+
+        ]
+      );
+
+    } else {
+
+      try {
+
+        const tickets =
+          await getTickets(
+            orderId
+          );
+
+        await sendGmail({
+
+          to:
+            order.buyer.email,
+
+          subject:
+            `Seu ingresso — ${EVENT_NAME}`,
+
+          text:
+            `Pagamento aprovado. Seus ${
+              tickets.length
+            } ingresso(s) para ${
+              EVENT_NAME
+            } estão neste e-mail.`,
+
+          attachments:
+            ticketAttachments(
+              tickets
+            ),
+
+          html:
+            `
+              <div style="
+                background:#070707;
+                padding:28px 12px;
+                font-family:Arial,sans-serif
+              ">
+
+                <div style="
+                  max-width:620px;
+                  margin:auto;
+                  color:#fff;
+                  text-align:center
+                ">
+
+                  <div style="
+                    font-size:12px;
+                    letter-spacing:3px;
+                    color:#ff3a4a;
+                    font-weight:800
+                  ">
+                    PAGAMENTO APROVADO
+                  </div>
+
+                  <h1>
+                    ${esc(EVENT_NAME)}
+                  </h1>
+
+                  <p style="
+                    color:#bbb
+                  ">
+                    Olá,
+                    ${esc(order.buyer.name)}.
+                    Guarde este e-mail e apresente
+                    o QR Code correspondente na entrada.
+                  </p>
+
+                  ${
+                    tickets
+                      .map(ticketHtml)
+                      .join('')
+                  }
+
+                  <p style="
+                    color:#777;
+                    font-size:11px
+                  ">
+                    Pedido:
+                    ${esc(order.orderId)}
+                  </p>
+
+                </div>
+
+              </div>
+            `
+
+        });
+
+        await db(
+          `
+            UPDATE orders
+            SET
+              email_sent_at=NOW(),
+              email_error=NULL,
+              updated_at=NOW()
+            WHERE order_id=$1
+          `,
+          [orderId]
+        );
+
+      } catch (emailError) {
+
+        console.error(
+          'ERRO GMAIL API:',
+          emailError
+        );
+
+        const errorText =
+          [
+            emailError.message,
+
+            emailError.code
+              ? `code=${emailError.code}`
+              : null
+
+          ]
+          .filter(Boolean)
+          .join(' | ');
+
+        await db(
+          `
+            UPDATE orders
+            SET
+              email_error=$1,
+              updated_at=NOW()
+            WHERE order_id=$2
+          `,
+          [
+
+            errorText.substring(
+              0,
+              2000
+            ),
+
+            orderId
+
+          ]
+        );
+
+      }
+
+    }
+
+  }
+
+  return await getOrder(
+    orderId
+  );
+
+}
+
+/* ========================================================
+   LOCK PARA EVITAR DUPLICAÇÃO
+   ======================================================== */
+
+const locks =
+  new Map();
+
+function fulfillLocked(id) {
+
+  if (locks.has(id)) {
+
+    return locks.get(id);
+
+  }
+
+  const p =
+    fulfillOrder(id)
+      .catch(e => {
+
+        console.error(
+          'Emissão:',
+          e
+        );
+
+        throw e;
+
+      })
+      .finally(() =>
+        locks.delete(id)
+      );
+
+  locks.set(
+    id,
+    p
+  );
+
+  return p;
+
+}
+
+/* ========================================================
+   HEALTH CHECK
+   ======================================================== */
+
+app.get(
+  '/health',
+  async (req, res) => {
+
+    try {
+
+      if (pool) {
+
+        await db(
+          'SELECT 1'
+        );
+
+      }
+
+      res.json({
+
+        ok: true,
+
+        db:
+          Boolean(pool),
+
+        event:
+          EVENT_NAME,
+
+        emailProvider:
+          'Gmail API',
+
+        gmailConfigured:
+          gmailReady()
+
+      });
+
+    } catch (e) {
+
+      res.status(503).json({
+
+        ok: false,
+
+        error:
+          e.message
+
+      });
+
+    }
+
+  }
+);
+
+/* ========================================================
+   CONFIGURAÇÃO PÚBLICA DO MERCADO PAGO
+   ======================================================== */
+
+app.get(
+  '/api/public-config',
+  (req, res) => {
+
+    res.json({
+
+      mercadoPagoPublicKey:
+        PUBLIC_KEY
+
+    });
+
+  }
+);
+
+/* ========================================================
+   MERCADO PAGO
+   ======================================================== */
+
+async function mpRequest(
+  url,
+  options = {}
+) {
+
+  if (!ACCESS_TOKEN) {
+
+    throw new Error(
+      'MP_ACCESS_TOKEN não configurado no servidor.'
+    );
+
+  }
+
+  const r =
+    await fetch(
+      url,
+      {
+
+        ...options,
+
+        headers: {
+
+          Authorization:
+            `Bearer ${ACCESS_TOKEN}`,
+
+          'Content-Type':
+            'application/json',
+
+          ...(options.headers || {})
+
+        }
+
+      }
+    );
+
+  const text =
+    await r.text();
+
+  let data;
+
+  try {
+
+    data =
+      JSON.parse(text);
+
+  } catch {
+
+    data = {
+      message: text
+    };
+
+  }
+
+  if (!r.ok) {
+
+    console.error(
+      'Mercado Pago:',
+      r.status,
+      data
+    );
+
+    throw new Error(
+      data.message ||
+      'Erro no Mercado Pago.'
+    );
+
+  }
+
+  return data;
+
+    }
+    /* ========================================================
    CRIAR PIX
    ======================================================== */
 
