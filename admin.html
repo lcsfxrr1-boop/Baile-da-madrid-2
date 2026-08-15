@@ -4,490 +4,1828 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Painel de Vendas — Baile da Madrid 2.0</title>
+
 <style>
   *{box-sizing:border-box}
+
   body{
     margin:0;
     background:#080808;
     color:#fff;
     font-family:Arial,Helvetica,sans-serif;
   }
-  .wrap{max-width:1250px;margin:0 auto;padding:24px 16px 50px}
+
+  .wrap{
+    max-width:1250px;
+    margin:0 auto;
+    padding:24px 16px 50px
+  }
+
   header{
-    display:flex;justify-content:space-between;align-items:center;gap:16px;
-    margin-bottom:24px;flex-wrap:wrap
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap:16px;
+    margin-bottom:24px;
+    flex-wrap:wrap
   }
+
   .brand{font-family:Arial,sans-serif}
-  .eyebrow{font-size:11px;letter-spacing:3px;color:#ff4052;font-weight:800}
-  h1{margin:5px 0 0;font-size:28px}
-  .sub{color:#999;font-size:13px;margin-top:5px}
+
+  .eyebrow{
+    font-size:11px;
+    letter-spacing:3px;
+    color:#ff4052;
+    font-weight:800
+  }
+
+  h1{
+    margin:5px 0 0;
+    font-size:28px
+  }
+
+  .sub{
+    color:#999;
+    font-size:13px;
+    margin-top:5px
+  }
+
   .card{
-    background:#111;border:1px solid #292929;border-radius:18px;
-    padding:18px;box-shadow:0 12px 30px rgba(0,0,0,.22)
+    background:#111;
+    border:1px solid #292929;
+    border-radius:18px;
+    padding:18px;
+    box-shadow:0 12px 30px rgba(0,0,0,.22)
   }
-  .login{max-width:520px;margin:70px auto}
-  label{display:block;font-size:12px;color:#aaa;margin-bottom:7px}
+
+  .login{
+    max-width:520px;
+    margin:70px auto
+  }
+
+  label{
+    display:block;
+    font-size:12px;
+    color:#aaa;
+    margin-bottom:7px
+  }
+
   input,select{
-    width:100%;background:#0a0a0a;color:#fff;border:1px solid #333;
-    border-radius:11px;padding:13px 14px;outline:none
+    width:100%;
+    background:#0a0a0a;
+    color:#fff;
+    border:1px solid #333;
+    border-radius:11px;
+    padding:13px 14px;
+    outline:none
   }
-  input:focus,select:focus{border-color:#ff4052}
+
+  input:focus,select:focus{
+    border-color:#ff4052
+  }
+
   button{
-    border:0;border-radius:11px;padding:12px 17px;color:#fff;
-    font-weight:800;cursor:pointer;background:linear-gradient(135deg,#ff3048,#7b2cff);
+    border:0;
+    border-radius:11px;
+    padding:12px 17px;
+    color:#fff;
+    font-weight:800;
+    cursor:pointer;
+    background:linear-gradient(135deg,#ff3048,#7b2cff);
   }
-  button.secondary{background:#202020;border:1px solid #353535}
-  button.danger{background:#42151b}
-  .row{display:flex;gap:10px;align-items:end;flex-wrap:wrap}
-  .row>div{flex:1;min-width:180px}
-  .actions{display:flex;gap:9px;flex-wrap:wrap}
+
+  button.secondary{
+    background:#202020;
+    border:1px solid #353535
+  }
+
+  button.danger{
+    background:#42151b
+  }
+
+  .row{
+    display:flex;
+    gap:10px;
+    align-items:end;
+    flex-wrap:wrap
+  }
+
+  .row>div{
+    flex:1;
+    min-width:180px
+  }
+
+  .actions{
+    display:flex;
+    gap:9px;
+    flex-wrap:wrap
+  }
+
   .stats{
-    display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:18px 0
+    display:grid;
+    grid-template-columns:repeat(4,1fr);
+    gap:12px;
+    margin:18px 0
   }
-  .stat b{font-size:27px;display:block;margin-top:5px}
-  .stat span{font-size:11px;color:#999;text-transform:uppercase;letter-spacing:1px}
+
+  .stat b{
+    font-size:27px;
+    display:block;
+    margin-top:5px
+  }
+
+  .stat span{
+    font-size:11px;
+    color:#999;
+    text-transform:uppercase;
+    letter-spacing:1px
+  }
+
   .sales-grid{
-    display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-top:12px
+    display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
+    gap:10px;
+    margin-top:12px
   }
+
   .sale{
-    background:#0b0b0b;border:1px solid #272727;border-radius:14px;padding:14px
+    background:#0b0b0b;
+    border:1px solid #272727;
+    border-radius:14px;
+    padding:14px
   }
-  .sale strong{display:block;font-size:15px;margin-bottom:10px}
-  .sale .num{font-size:25px;font-weight:900}
-  .sale small{color:#888}
-  .table-wrap{overflow:auto;margin-top:14px}
-  table{width:100%;border-collapse:collapse;min-width:900px}
-  th,td{padding:13px 11px;border-bottom:1px solid #242424;text-align:left;font-size:13px;vertical-align:top}
-  th{color:#999;font-size:11px;text-transform:uppercase;letter-spacing:.7px}
-  td strong{display:block}
-  td small{display:block;color:#888;margin-top:4px}
+
+  .sale strong{
+    display:block;
+    font-size:15px;
+    margin-bottom:10px
+  }
+
+  .sale .num{
+    font-size:25px;
+    font-weight:900
+  }
+
+  .sale small{
+    color:#888
+  }
+
+  .table-wrap{
+    overflow:auto;
+    margin-top:14px
+  }
+
+  table{
+    width:100%;
+    border-collapse:collapse;
+    min-width:900px
+  }
+
+  th,td{
+    padding:13px 11px;
+    border-bottom:1px solid #242424;
+    text-align:left;
+    font-size:13px;
+    vertical-align:top
+  }
+
+  th{
+    color:#999;
+    font-size:11px;
+    text-transform:uppercase;
+    letter-spacing:.7px
+  }
+
+  td strong{
+    display:block
+  }
+
+  td small{
+    display:block;
+    color:#888;
+    margin-top:4px
+  }
+
   .badge{
-    display:inline-block;padding:5px 9px;border-radius:999px;font-size:10px;
-    font-weight:900;text-transform:uppercase
+    display:inline-block;
+    padding:5px 9px;
+    border-radius:999px;
+    font-size:10px;
+    font-weight:900;
+    text-transform:uppercase
   }
-  .approved{background:#103d27;color:#70ffae}
-  .pending{background:#3d3110;color:#ffd866}
-  .rejected,.cancelled{background:#42151b;color:#ff7d8a}
+
+  .approved{
+    background:#103d27;
+    color:#70ffae
+  }
+
+  .pending{
+    background:#3d3110;
+    color:#ffd866
+  }
+
+  .rejected,.cancelled{
+    background:#42151b;
+    color:#ff7d8a
+  }
+
   .ticket{
-    display:inline-block;background:#1a1a1a;border:1px solid #303030;
-    border-radius:7px;padding:4px 7px;margin:2px 3px 2px 0;font-size:11px
+    display:inline-block;
+    background:#1a1a1a;
+    border:1px solid #303030;
+    border-radius:7px;
+    padding:4px 7px;
+    margin:2px 3px 2px 0;
+    font-size:11px
   }
-  .muted{color:#777}
-  .hidden{display:none!important}
-  .message{margin-top:12px;color:#ff8490;font-size:13px}
-  .success{color:#6dffac}
-  .topbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+
+  .muted{
+    color:#777
+  }
+
+  .hidden{
+    display:none!important
+  }
+
+  .message{
+    margin-top:12px;
+    color:#ff8490;
+    font-size:13px
+  }
+
+  .success{
+    color:#6dffac
+  }
+
+  .topbar{
+    display:flex;
+    gap:10px;
+    flex-wrap:wrap;
+    align-items:center
+  }
+
+  .smtp-box{
+    margin-top:18px;
+    border-color:#294936;
+  }
+
+  .smtp-status{
+    margin-top:12px;
+    padding:12px 14px;
+    border-radius:10px;
+    background:#0b0b0b;
+    border:1px solid #292929;
+    font-size:13px;
+    line-height:1.5;
+    word-break:break-word;
+  }
+
+  .smtp-ok{
+    border-color:#1d633e;
+    color:#70ffae;
+  }
+
+  .smtp-error{
+    border-color:#6b252d;
+    color:#ff8994;
+  }
+
   @media(max-width:800px){
-    .stats{grid-template-columns:repeat(2,1fr)}
-    h1{font-size:23px}
+    .stats{
+      grid-template-columns:repeat(2,1fr)
+    }
+
+    h1{
+      font-size:23px
+    }
   }
+
   @media(max-width:480px){
-    .stats{grid-template-columns:1fr 1fr}
-    .wrap{padding:15px 10px 40px}
-    .card{padding:14px}
+    .stats{
+      grid-template-columns:1fr 1fr
+    }
+
+    .wrap{
+      padding:15px 10px 40px
+    }
+
+    .card{
+      padding:14px
+    }
   }
 </style>
 </head>
+
 <body>
 
 <div class="wrap">
 
-  <section id="loginCard" class="card login">
-    <div class="eyebrow">BAILE DA MADRID 2.0</div>
-    <h1>Painel administrativo</h1>
-    <p class="sub">Digite o ADMIN_TOKEN configurado no servidor para acessar as vendas.</p>
+  <!-- LOGIN -->
 
-    <label for="adminToken">ADMIN_TOKEN</label>
-    <input id="adminToken" type="password" autocomplete="current-password" placeholder="Digite seu token">
+  <section id="loginCard" class="card login">
+
+    <div class="eyebrow">
+      BAILE DA MADRID 2.0
+    </div>
+
+    <h1>
+      Painel administrativo
+    </h1>
+
+    <p class="sub">
+      Digite o ADMIN_TOKEN configurado no servidor para acessar as vendas.
+    </p>
+
+    <label for="adminToken">
+      ADMIN_TOKEN
+    </label>
+
+    <input
+      id="adminToken"
+      type="password"
+      autocomplete="current-password"
+      placeholder="Digite seu token"
+    >
 
     <div class="actions" style="margin-top:12px">
-      <button onclick="login()">Entrar no painel</button>
+      <button onclick="login()">
+        Entrar no painel
+      </button>
     </div>
 
     <div id="loginMsg" class="message"></div>
+
   </section>
+
+
+  <!-- PAINEL -->
 
   <main id="panel" class="hidden">
 
     <header>
+
       <div class="brand">
-        <div class="eyebrow">BAILE DA MADRID 2.0</div>
-        <h1>Vendas e compradores</h1>
-        <div class="sub">Acompanhe pagamentos aprovados e ingressos emitidos.</div>
+
+        <div class="eyebrow">
+          BAILE DA MADRID 2.0
+        </div>
+
+        <h1>
+          Vendas e compradores
+        </h1>
+
+        <div class="sub">
+          Acompanhe pagamentos aprovados e ingressos emitidos.
+        </div>
+
       </div>
 
       <div class="topbar">
-        <button class="secondary" onclick="loadAll()">Atualizar</button>
-        <button class="secondary" onclick="exportCSV()">Exportar CSV</button>
-        <button class="danger" onclick="logout()">Sair</button>
+
+        <button
+          class="secondary"
+          onclick="loadAll()"
+        >
+          Atualizar
+        </button>
+
+        <button
+          class="secondary"
+          onclick="exportCSV()"
+        >
+          Exportar CSV
+        </button>
+
+        <button
+          class="danger"
+          onclick="logout()"
+        >
+          Sair
+        </button>
+
       </div>
+
     </header>
 
-    <section class="card" style="margin-bottom:18px;border-color:#49336f">
-      <div class="eyebrow">MODO DE TESTE</div>
-      <h2 style="margin:6px 0 5px;font-size:20px">Testar ingresso completo</h2>
-      <p class="sub">Cria uma compra aprovada sem cobrar o Mercado Pago, gera o QR Code e tenta enviar o ingresso para o e-mail informado. Depois, teste o leitor e tente usar o mesmo QR novamente.</p>
-      <div class="row" style="margin-top:14px">
-        <div><label for="testEmail">E-mail para receber o ingresso</label><input id="testEmail" type="email" placeholder="seuemail@exemplo.com"></div>
-        <div style="max-width:220px"><label for="testBatch">Tipo de ingresso</label><select id="testBatch"><option value="pre">Pré-Venda — R$ 10</option><option value="lote1">1º Lote — R$ 20</option><option value="lote2">2º Lote — R$ 25</option><option value="lote3">3º Lote — R$ 30</option><option value="vip">Área VIP — R$ 70</option></select></div>
+
+    <!-- TESTE SMTP -->
+
+    <section
+      class="card smtp-box"
+    >
+
+      <div class="eyebrow">
+        E-MAIL / GMAIL
       </div>
-      <div class="actions" style="margin-top:12px"><button onclick="createTestOrder()">🧪 Criar compra de teste</button><button class="danger" onclick="deleteTestOrders()">Apagar compras de teste</button></div>
-      <div id="testMsg" class="message"></div>
+
+      <h2 style="margin:6px 0 5px;font-size:20px">
+        Testar conexão do Gmail
+      </h2>
+
+      <p class="sub">
+        Este teste não cria compra e não envia ingresso.
+        Ele apenas verifica se o servidor consegue conectar e autenticar no Gmail usando as variáveis SMTP do Render.
+      </p>
+
+      <div
+        class="actions"
+        style="margin-top:12px"
+      >
+
+        <button
+          onclick="testSMTP()"
+        >
+          📧 Testar SMTP
+        </button>
+
+      </div>
+
+      <div
+        id="smtpStatus"
+        class="smtp-status"
+      >
+        Ainda não testado.
+      </div>
+
     </section>
+
+
+    <!-- TESTE DE COMPRA -->
+
+    <section
+      class="card"
+      style="margin-top:18px;border-color:#49336f"
+    >
+
+      <div class="eyebrow">
+        MODO DE TESTE
+      </div>
+
+      <h2 style="margin:6px 0 5px;font-size:20px">
+        Testar ingresso completo
+      </h2>
+
+      <p class="sub">
+        Cria uma compra aprovada sem cobrar o Mercado Pago, gera o QR Code e tenta enviar o ingresso para o e-mail informado. Depois, teste o leitor e tente usar o mesmo QR novamente.
+      </p>
+
+      <div
+        class="row"
+        style="margin-top:14px"
+      >
+
+        <div>
+
+          <label for="testEmail">
+            E-mail para receber o ingresso
+          </label>
+
+          <input
+            id="testEmail"
+            type="email"
+            placeholder="seuemail@exemplo.com"
+          >
+
+        </div>
+
+        <div style="max-width:220px">
+
+          <label for="testBatch">
+            Tipo de ingresso
+          </label>
+
+          <select id="testBatch">
+
+            <option value="pre">
+              Pré-Venda — R$ 10
+            </option>
+
+            <option value="lote1">
+              1º Lote — R$ 20
+            </option>
+
+            <option value="lote2">
+              2º Lote — R$ 25
+            </option>
+
+            <option value="lote3">
+              3º Lote — R$ 30
+            </option>
+
+            <option value="vip">
+              Área VIP — R$ 70
+            </option>
+
+          </select>
+
+        </div>
+
+      </div>
+
+      <div
+        class="actions"
+        style="margin-top:12px"
+      >
+
+        <button onclick="createTestOrder()">
+          🧪 Criar compra de teste
+        </button>
+
+        <button
+          class="danger"
+          onclick="deleteTestOrders()"
+        >
+          Apagar compras de teste
+        </button>
+
+      </div>
+
+      <div
+        id="testMsg"
+        class="message"
+      ></div>
+
+    </section>
+
+
+    <!-- ESTATÍSTICAS -->
 
     <section class="stats">
+
       <div class="card stat">
-        <span>Pedidos aprovados</span>
-        <b id="approvedOrders">—</b>
+
+        <span>
+          Pedidos aprovados
+        </span>
+
+        <b id="approvedOrders">
+          —
+        </b>
+
       </div>
+
+
       <div class="card stat">
-        <span>Ingressos vendidos</span>
-        <b id="soldTickets">—</b>
+
+        <span>
+          Ingressos vendidos
+        </span>
+
+        <b id="soldTickets">
+          —
+        </b>
+
       </div>
+
+
       <div class="card stat">
-        <span>Ingressos utilizados</span>
-        <b id="usedTickets">—</b>
+
+        <span>
+          Ingressos utilizados
+        </span>
+
+        <b id="usedTickets">
+          —
+        </b>
+
       </div>
+
+
       <div class="card stat">
-        <span>Disponíveis</span>
-        <b id="availableTickets">—</b>
+
+        <span>
+          Disponíveis
+        </span>
+
+        <b id="availableTickets">
+          —
+        </b>
+
       </div>
+
     </section>
+
+
+    <!-- VENDAS POR LOTE -->
 
     <section class="card">
-      <div class="eyebrow">VENDAS POR LOTE</div>
-      <div id="salesGrid" class="sales-grid">
-        <div class="muted">Carregando...</div>
+
+      <div class="eyebrow">
+        VENDAS POR LOTE
       </div>
+
+      <div
+        id="salesGrid"
+        class="sales-grid"
+      >
+
+        <div class="muted">
+          Carregando...
+        </div>
+
+      </div>
+
     </section>
 
-    <section class="card" style="margin-top:18px">
+
+    <!-- COMPRADORES -->
+
+    <section
+      class="card"
+      style="margin-top:18px"
+    >
+
       <div class="row">
+
         <div>
-          <label for="search">Buscar comprador</label>
-          <input id="search" placeholder="Nome, e-mail, telefone ou pedido" oninput="renderOrders()">
+
+          <label for="search">
+            Buscar comprador
+          </label>
+
+          <input
+            id="search"
+            placeholder="Nome, e-mail, telefone ou pedido"
+            oninput="renderOrders()"
+          >
+
         </div>
+
         <div style="max-width:220px">
-          <label for="statusFilter">Status</label>
-          <select id="statusFilter" onchange="loadOrders()">
-            <option value="approved">Pagamentos aprovados</option>
-            <option value="">Todos os status</option>
-            <option value="pending">Pendentes</option>
-            <option value="rejected">Rejeitados</option>
-            <option value="cancelled">Cancelados</option>
+
+          <label for="statusFilter">
+            Status
+          </label>
+
+          <select
+            id="statusFilter"
+            onchange="loadOrders()"
+          >
+
+            <option value="approved">
+              Pagamentos aprovados
+            </option>
+
+            <option value="">
+              Todos os status
+            </option>
+
+            <option value="pending">
+              Pendentes
+            </option>
+
+            <option value="rejected">
+              Rejeitados
+            </option>
+
+            <option value="cancelled">
+              Cancelados
+            </option>
+
           </select>
+
         </div>
+
         <div style="max-width:150px">
-          <button class="secondary" onclick="clearSearch()">Limpar busca</button>
+
+          <button
+            class="secondary"
+            onclick="clearSearch()"
+          >
+            Limpar busca
+          </button>
+
         </div>
+
       </div>
 
-      <div id="tableMsg" class="message"></div>
+
+      <div
+        id="tableMsg"
+        class="message"
+      ></div>
+
 
       <div class="table-wrap">
+
         <table>
+
           <thead>
+
             <tr>
-              <th>Comprador</th>
-              <th>CPF</th>
-              <th>WhatsApp</th>
-              <th>Ingressos</th>
-              <th>Valor</th>
-              <th>Status</th>
-              <th>Data</th>
+
+              <th>
+                Comprador
+              </th>
+
+              <th>
+                CPF
+              </th>
+
+              <th>
+                WhatsApp
+              </th>
+
+              <th>
+                Ingressos
+              </th>
+
+              <th>
+                Valor
+              </th>
+
+              <th>
+                Status
+              </th>
+
+              <th>
+                Data
+              </th>
+
             </tr>
+
           </thead>
+
           <tbody id="ordersBody"></tbody>
+
         </table>
+
       </div>
+
     </section>
 
   </main>
+
 </div>
 
+
 <script>
-let token = sessionStorage.getItem('adminToken') || '';
+
+let token =
+  sessionStorage.getItem('adminToken') || '';
+
 let orders = [];
 
+
+/* ========================================================
+   HEADERS
+   ======================================================== */
+
 function headers(){
+
   return {
     'Content-Type':'application/json',
     'x-admin-token':token
   };
+
 }
+
+
+/* ========================================================
+   FORMATAÇÃO
+   ======================================================== */
 
 function money(v){
-  return Number(v||0).toLocaleString('pt-BR',{
-    style:'currency',
-    currency:'BRL'
-  });
+
+  return Number(v||0).toLocaleString(
+    'pt-BR',
+    {
+      style:'currency',
+      currency:'BRL'
+    }
+  );
+
 }
+
 
 function dateBR(v){
+
   if(!v) return '—';
-  const d=new Date(v);
-  if(Number.isNaN(d.getTime())) return v;
-  return d.toLocaleString('pt-BR');
+
+  const d =
+    new Date(v);
+
+  if(
+    Number.isNaN(
+      d.getTime()
+    )
+  ){
+    return v;
+  }
+
+  return d.toLocaleString(
+    'pt-BR'
+  );
+
 }
+
 
 function formatCPF(v){
-  const d=String(v||'').replace(/\D/g,'');
-  if(d.length!==11) return escapeHtml(v||'—');
-  return d.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/,'$1.$2.$3-$4');
+
+  const d =
+    String(v||'')
+      .replace(/\D/g,'');
+
+  if(
+    d.length!==11
+  ){
+    return escapeHtml(
+      v||'—'
+    );
+  }
+
+  return d.replace(
+    /(\d{3})(\d{3})(\d{3})(\d{2})/,
+    '$1.$2.$3-$4'
+  );
+
 }
+
 
 function formatPhone(v){
-  const d=String(v||'').replace(/\D/g,'');
-  if(d.length===11){
-    return d.replace(/(\d{2})(\d{5})(\d{4})/,'($1) $2-$3');
+
+  const d =
+    String(v||'')
+      .replace(/\D/g,'');
+
+  if(
+    d.length===11
+  ){
+
+    return d.replace(
+      /(\d{2})(\d{5})(\d{4})/,
+      '($1) $2-$3'
+    );
+
   }
-  if(d.length===10){
-    return d.replace(/(\d{2})(\d{4})(\d{4})/,'($1) $2-$3');
+
+  if(
+    d.length===10
+  ){
+
+    return d.replace(
+      /(\d{2})(\d{4})(\d{4})/,
+      '($1) $2-$3'
+    );
+
   }
-  return escapeHtml(v||'—');
+
+  return escapeHtml(
+    v||'—'
+  );
+
 }
 
-function formatCPF(v){const d=String(v||'').replace(/\D/g,'');return d.length===11?d.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/,'$1.$2.$3-$4'):escapeHtml(v||'—');}
-function formatPhone(v){const d=String(v||'').replace(/\D/g,'');if(d.length===11)return d.replace(/(\d{2})(\d{5})(\d{4})/,'($1) $2-$3');if(d.length===10)return d.replace(/(\d{2})(\d{4})(\d{4})/,'($1) $2-$3');return escapeHtml(v||'—');}
 
 function escapeHtml(v){
-  return String(v ?? '').replace(/[&<>"']/g,c=>({
-    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
-  }[c]));
+
+  return String(
+    v ?? ''
+  ).replace(
+    /[&<>"']/g,
+    c=>({
+
+      '&':'&amp;',
+      '<':'&lt;',
+      '>':'&gt;',
+      '"':'&quot;',
+      "'":'&#39;'
+
+    }[c])
+  );
+
 }
+
+
+/* ========================================================
+   API
+   ======================================================== */
 
 async function api(url){
-  const r=await fetch(url,{headers:headers()});
-  const data=await r.json().catch(()=>({}));
-  if(!r.ok) throw new Error(data.error || 'Erro ao consultar o servidor.');
+
+  const r =
+    await fetch(
+      url,
+      {
+        headers:headers()
+      }
+    );
+
+  const data =
+    await r.json()
+      .catch(
+        ()=>({})
+      );
+
+  if(!r.ok){
+
+    throw new Error(
+      data.error ||
+      'Erro ao consultar o servidor.'
+    );
+
+  }
+
   return data;
+
 }
 
+
+/* ========================================================
+   LOGIN
+   ======================================================== */
+
 async function login(){
-  const input=document.getElementById('adminToken');
-  const msg=document.getElementById('loginMsg');
-  const value=input.value.trim();
+
+  const input =
+    document.getElementById(
+      'adminToken'
+    );
+
+  const msg =
+    document.getElementById(
+      'loginMsg'
+    );
+
+  const value =
+    input.value.trim();
 
   if(!value){
-    msg.textContent='Digite o ADMIN_TOKEN.';
+
+    msg.textContent =
+      'Digite o ADMIN_TOKEN.';
+
     return;
+
   }
 
   token=value;
-  msg.textContent='Verificando...';
+
+  msg.textContent =
+    'Verificando...';
 
   try{
-    await api('/api/tickets/stats');
-    sessionStorage.setItem('adminToken',token);
+
+    await api(
+      '/api/tickets/stats'
+    );
+
+    sessionStorage.setItem(
+      'adminToken',
+      token
+    );
+
     showPanel();
+
     await loadAll();
+
   }catch(e){
+
     token='';
-    sessionStorage.removeItem('adminToken');
-    msg.textContent=e.message;
+
+    sessionStorage.removeItem(
+      'adminToken'
+    );
+
+    msg.textContent =
+      e.message;
+
   }
+
 }
+
 
 function showPanel(){
-  document.getElementById('loginCard').classList.add('hidden');
-  document.getElementById('panel').classList.remove('hidden');
+
+  document
+    .getElementById(
+      'loginCard'
+    )
+    .classList
+    .add('hidden');
+
+  document
+    .getElementById(
+      'panel'
+    )
+    .classList
+    .remove('hidden');
+
 }
+
 
 function logout(){
+
   token='';
-  sessionStorage.removeItem('adminToken');
-  document.getElementById('panel').classList.add('hidden');
-  document.getElementById('loginCard').classList.remove('hidden');
-  document.getElementById('adminToken').value='';
+
+  sessionStorage.removeItem(
+    'adminToken'
+  );
+
+  document
+    .getElementById(
+      'panel'
+    )
+    .classList
+    .add('hidden');
+
+  document
+    .getElementById(
+      'loginCard'
+    )
+    .classList
+    .remove('hidden');
+
+  document
+    .getElementById(
+      'adminToken'
+    )
+    .value='';
+
 }
+
+
+/* ========================================================
+   TESTE SMTP
+   ======================================================== */
+
+async function testSMTP(){
+
+  const box =
+    document.getElementById(
+      'smtpStatus'
+    );
+
+  box.className =
+    'smtp-status';
+
+  box.innerHTML =
+    '⏳ Testando conexão com o Gmail...';
+
+  try{
+
+    const r =
+      await fetch(
+        '/api/admin/test-smtp',
+        {
+          method:'GET',
+          headers:headers()
+        }
+      );
+
+    const d =
+      await r.json()
+        .catch(
+          ()=>({})
+        );
+
+    if(!r.ok){
+
+      let texto =
+        d.error ||
+        'O servidor recusou o teste SMTP.';
+
+      if(d.code){
+
+        texto +=
+          '<br><strong>Código:</strong> '+
+          escapeHtml(d.code);
+
+      }
+
+      if(d.command){
+
+        texto +=
+          '<br><strong>Comando:</strong> '+
+          escapeHtml(d.command);
+
+      }
+
+      if(d.response){
+
+        texto +=
+          '<br><strong>Resposta:</strong> '+
+          escapeHtml(d.response);
+
+      }
+
+      box.className =
+        'smtp-status smtp-error';
+
+      box.innerHTML =
+        '❌ <strong>Falha no SMTP</strong><br>'+
+        texto;
+
+      return;
+
+    }
+
+
+    if(d.ok){
+
+      box.className =
+        'smtp-status smtp-ok';
+
+      box.innerHTML =
+        '✅ <strong>SMTP conectado e autenticado com sucesso!</strong><br>'+
+        'Servidor: '+
+        escapeHtml(
+          d.host ||
+          'smtp.gmail.com'
+        )+
+        '<br>'+
+        'Porta: '+
+        escapeHtml(
+          d.port ||
+          '587'
+        )+
+        '<br>'+
+        'Usuário: '+
+        escapeHtml(
+          d.user ||
+          ''
+        );
+
+      return;
+
+    }
+
+
+    box.className =
+      'smtp-status smtp-error';
+
+    box.innerHTML =
+      '❌ O teste não foi concluído.';
+
+  }catch(e){
+
+    box.className =
+      'smtp-status smtp-error';
+
+    box.innerHTML =
+      '❌ <strong>Erro de conexão</strong><br>'+
+      escapeHtml(
+        e.message
+      );
+
+  }
+
+}
+
+
+/* ========================================================
+   COMPRA DE TESTE
+   ======================================================== */
 
 async function createTestOrder(){
-  const msg=document.getElementById('testMsg');
-  const email=document.getElementById('testEmail').value.trim();
-  const batchId=document.getElementById('testBatch').value;
-  if(!email){msg.textContent='Digite o e-mail que receberá o ingresso de teste.';return;}
-  msg.textContent='Criando ingresso e enviando e-mail...';
+
+  const msg =
+    document.getElementById(
+      'testMsg'
+    );
+
+  const email =
+    document
+      .getElementById(
+        'testEmail'
+      )
+      .value
+      .trim();
+
+  const batchId =
+    document
+      .getElementById(
+        'testBatch'
+      )
+      .value;
+
+  if(!email){
+
+    msg.textContent =
+      'Digite o e-mail que receberá o ingresso de teste.';
+
+    return;
+
+  }
+
+  msg.textContent =
+    'Criando ingresso e enviando e-mail...';
+
+  msg.className =
+    'message';
+
   try{
-    const r=await fetch('/api/admin/test-order',{method:'POST',headers:headers(),body:JSON.stringify({email,batchId})});
-    const d=await r.json().catch(()=>({}));
-    if(!r.ok)throw new Error(d.error||'Não foi possível criar o teste.');
-    const ticket=d.tickets?.[0];
-    msg.innerHTML=d.emailSent?'✅ Compra de teste criada e e-mail enviado. '+(ticket?'Ingresso: <strong>'+escapeHtml(ticket.ticketId)+'</strong>.':''):'⚠️ Compra criada, mas o e-mail não foi confirmado.'+(d.emailError?' '+escapeHtml(d.emailError):'');
-    msg.className=d.emailSent?'message success':'message';
+
+    const r =
+      await fetch(
+        '/api/admin/test-order',
+        {
+          method:'POST',
+          headers:headers(),
+
+          body:
+            JSON.stringify({
+              email,
+              batchId
+            })
+        }
+      );
+
+    const d =
+      await r.json()
+        .catch(
+          ()=>({})
+        );
+
+    if(!r.ok){
+
+      throw new Error(
+        d.error ||
+        'Não foi possível criar o teste.'
+      );
+
+    }
+
+    const ticket =
+      d.tickets?.[0];
+
+    if(d.emailSent){
+
+      msg.innerHTML =
+        '✅ Compra de teste criada e e-mail enviado. '+
+        (
+          ticket
+          ?
+          'Ingresso: <strong>'+
+          escapeHtml(
+            ticket.ticketId
+          )+
+          '</strong>.'
+          :
+          ''
+        );
+
+      msg.className =
+        'message success';
+
+    }else{
+
+      msg.innerHTML =
+        '⚠️ Compra criada, mas o e-mail não foi confirmado.'+
+        (
+          d.emailError
+          ?
+          '<br><strong>Erro:</strong> '+
+          escapeHtml(
+            d.emailError
+          )
+          :
+          ''
+        );
+
+      msg.className =
+        'message';
+
+    }
+
     await loadAll();
-  }catch(e){msg.textContent=e.message;msg.className='message';}
+
+  }catch(e){
+
+    msg.textContent =
+      e.message;
+
+    msg.className =
+      'message';
+
+  }
+
 }
+
+
+/* ========================================================
+   APAGAR TESTES
+   ======================================================== */
 
 async function deleteTestOrders(){
-  if(!confirm('Apagar todas as compras de teste?\n\nIsso remove somente pedidos cujo código começa com TEST-.'))return;
-  const msg=document.getElementById('testMsg');msg.textContent='Apagando...';
+
+  if(
+    !confirm(
+      'Apagar todas as compras de teste?\n\nIsso remove somente pedidos cujo código começa com TEST-.'
+    )
+  ){
+    return;
+  }
+
+  const msg =
+    document.getElementById(
+      'testMsg'
+    );
+
+  msg.textContent =
+    'Apagando...';
+
   try{
-    const r=await fetch('/api/admin/test-orders',{method:'DELETE',headers:headers()});
-    const d=await r.json().catch(()=>({}));
-    if(!r.ok)throw new Error(d.error||'Não foi possível apagar os testes.');
-    msg.textContent='✅ '+(d.deleted||0)+' compra(s) de teste apagada(s).';msg.className='message success';await loadAll();
-  }catch(e){msg.textContent=e.message;msg.className='message';}
+
+    const r =
+      await fetch(
+        '/api/admin/test-orders',
+        {
+          method:'DELETE',
+          headers:headers()
+        }
+      );
+
+    const d =
+      await r.json()
+        .catch(
+          ()=>({})
+        );
+
+    if(!r.ok){
+
+      throw new Error(
+        d.error ||
+        'Não foi possível apagar os testes.'
+      );
+
+    }
+
+    msg.textContent =
+      '✅ '+
+      (
+        d.deleted||0
+      )+
+      ' compra(s) de teste apagada(s).';
+
+    msg.className =
+      'message success';
+
+    await loadAll();
+
+  }catch(e){
+
+    msg.textContent =
+      e.message;
+
+    msg.className =
+      'message';
+
+  }
+
 }
 
+
+/* ========================================================
+   CARREGAR TUDO
+   ======================================================== */
+
 async function loadAll(){
-  const msg=document.getElementById('tableMsg');
-  msg.textContent='Atualizando...';
-  msg.className='message';
+
+  const msg =
+    document.getElementById(
+      'tableMsg'
+    );
+
+  msg.textContent =
+    'Atualizando...';
+
+  msg.className =
+    'message';
 
   try{
+
     await Promise.all([
       loadStats(),
       loadSales(),
       loadOrders()
     ]);
-    msg.textContent='Dados atualizados.';
-    msg.className='message success';
-    setTimeout(()=>{msg.textContent='';},2500);
+
+    msg.textContent =
+      'Dados atualizados.';
+
+    msg.className =
+      'message success';
+
+    setTimeout(
+      ()=>{
+        msg.textContent='';
+      },
+      2500
+    );
+
   }catch(e){
-    if(/401|403|autorizado/i.test(e.message)) logout();
-    msg.textContent=e.message;
+
+    if(
+      /401|403|autorizado/i
+        .test(e.message)
+    ){
+
+      logout();
+
+    }
+
+    msg.textContent =
+      e.message;
+
   }
+
 }
+
+
+/* ========================================================
+   ESTATÍSTICAS
+   ======================================================== */
 
 async function loadStats(){
-  const d=await api('/api/tickets/stats');
-  document.getElementById('approvedOrders').textContent=d.approvedOrders ?? 0;
-  document.getElementById('soldTickets').textContent=d.soldTickets ?? 0;
-  document.getElementById('usedTickets').textContent=d.usedTickets ?? 0;
-  document.getElementById('availableTickets').textContent=d.availableTickets ?? 0;
+
+  const d =
+    await api(
+      '/api/tickets/stats'
+    );
+
+  document
+    .getElementById(
+      'approvedOrders'
+    )
+    .textContent =
+      d.approvedOrders ?? 0;
+
+  document
+    .getElementById(
+      'soldTickets'
+    )
+    .textContent =
+      d.soldTickets ?? 0;
+
+  document
+    .getElementById(
+      'usedTickets'
+    )
+    .textContent =
+      d.usedTickets ?? 0;
+
+  document
+    .getElementById(
+      'availableTickets'
+    )
+    .textContent =
+      d.availableTickets ?? 0;
+
 }
+
+
+/* ========================================================
+   VENDAS POR LOTE
+   ======================================================== */
 
 async function loadSales(){
-  const d=await api('/api/admin/sales-by-batch');
-  const grid=document.getElementById('salesGrid');
 
-  if(!d.sales || !d.sales.length){
-    grid.innerHTML='<div class="muted">Nenhuma venda aprovada ainda.</div>';
+  const d =
+    await api(
+      '/api/admin/sales-by-batch'
+    );
+
+  const grid =
+    document.getElementById(
+      'salesGrid'
+    );
+
+  if(
+    !d.sales ||
+    !d.sales.length
+  ){
+
+    grid.innerHTML =
+      '<div class="muted">Nenhuma venda aprovada ainda.</div>';
+
     return;
+
   }
 
-  grid.innerHTML=d.sales.map(s=>`
-    <div class="sale">
-      <strong>${escapeHtml(s.batchName)}</strong>
-      <div class="num">${s.soldTickets}</div>
-      <small>vendidos · ${money(s.revenue)}</small>
-      <small>${s.usedTickets} já utilizados</small>
-    </div>
-  `).join('');
+  grid.innerHTML =
+    d.sales.map(
+      s=>`
+
+        <div class="sale">
+
+          <strong>
+            ${escapeHtml(s.batchName)}
+          </strong>
+
+          <div class="num">
+            ${s.soldTickets}
+          </div>
+
+          <small>
+            vendidos ·
+            ${money(s.revenue)}
+          </small>
+
+          <small>
+            ${s.usedTickets}
+            já utilizados
+          </small>
+
+        </div>
+
+      `
+    ).join('');
+
 }
+
+
+/* ========================================================
+   PEDIDOS
+   ======================================================== */
 
 async function loadOrders(){
-  const status=document.getElementById('statusFilter').value;
-  const url=status
-    ?'/api/admin/orders?status='+encodeURIComponent(status)
-    :'/api/admin/orders';
+
+  const status =
+    document
+      .getElementById(
+        'statusFilter'
+      )
+      .value;
+
+  const url =
+    status
+    ?
+    '/api/admin/orders?status='+
+    encodeURIComponent(status)
+    :
+    '/api/admin/orders';
 
   try{
-    const d=await api(url);
-    orders=d.orders || [];
+
+    const d =
+      await api(url);
+
+    orders =
+      d.orders || [];
+
     renderOrders();
+
   }catch(e){
-    document.getElementById('tableMsg').textContent=e.message;
+
+    document
+      .getElementById(
+        'tableMsg'
+      )
+      .textContent =
+        e.message;
+
   }
+
 }
+
+
+/* ========================================================
+   RENDER PEDIDOS
+   ======================================================== */
 
 function renderOrders(){
-  const q=document.getElementById('search').value.trim().toLowerCase();
-  const body=document.getElementById('ordersBody');
 
-  const filtered=orders.filter(o=>{
-    if(!q)return true;
+  const q =
+    document
+      .getElementById(
+        'search'
+      )
+      .value
+      .trim()
+      .toLowerCase();
 
-    const text=[
-      o.buyer?.name,
-      o.buyer?.email,
-      o.buyer?.phone,
-      o.orderId,
-      ...(o.tickets||[]).map(t=>t.batchName)
-    ].join(' ').toLowerCase();
+  const body =
+    document.getElementById(
+      'ordersBody'
+    );
 
-    return text.includes(q);
-  });
+  const filtered =
+    orders.filter(
+      o=>{
+
+        if(!q)return true;
+
+        const text =
+          [
+            o.buyer?.name,
+            o.buyer?.email,
+            o.buyer?.phone,
+            o.orderId,
+
+            ...(o.tickets||[])
+              .map(
+                t=>t.batchName
+              )
+
+          ]
+          .join(' ')
+          .toLowerCase();
+
+        return text.includes(q);
+
+      }
+    );
+
 
   if(!filtered.length){
-    body.innerHTML=`
+
+    body.innerHTML = `
+
       <tr>
-        <td colspan="7" class="muted">
+
+        <td
+          colspan="7"
+          class="muted"
+        >
           Nenhum comprador encontrado.
         </td>
-      </tr>`;
+
+      </tr>
+
+    `;
+
     return;
+
   }
 
-  body.innerHTML=filtered.map(o=>{
 
-    const tickets=o.tickets||[];
+  body.innerHTML =
+    filtered.map(
+      o=>{
 
-    const ticketsHtml=tickets.length
-      ?tickets.map(t=>`
-        <span class="ticket">
-          ${escapeHtml(t.batchName)}
-          ${t.usedAt?' ✓':''}
-        </span>
-      `).join('')
-      :'<span class="muted">Aguardando ingressos</span>';
+        const tickets =
+          o.tickets || [];
 
-    const statusClass=
-      String(o.status||'').toLowerCase();
+        const ticketsHtml =
+          tickets.length
 
-    return `
-      <tr>
+          ?
 
-        <td>
-          <strong>${escapeHtml(o.buyer?.name)}</strong>
-          <small>Pedido: ${escapeHtml(o.orderId)}</small>
-        </td>
+          tickets.map(
+            t=>`
 
-        <td>
-          ${formatCPF(o.buyer?.cpf)}
-        </td>
+              <span class="ticket">
 
-        <td>
-          ${formatPhone(o.buyer?.phone)}
-          <small>${escapeHtml(o.buyer?.email)}</small>
-        </td>
+                ${escapeHtml(
+                  t.batchName
+                )}
 
-        <td>
-          ${ticketsHtml}
-        </td>
+                ${
+                  t.usedAt
+                  ?
+                  ' ✓'
+                  :
+                  ''
+                }
 
-        <td>
-          <strong>${money(o.total)}</strong>
-          <small>${tickets.length} ingresso(s)</small>
-        </td>
+              </span>
 
-        <td>
-          <span class="badge ${statusClass}">
-            ${escapeHtml(o.status)}
-          </span>
-        </td>
+            `
+          ).join('')
 
-        <td>
-          ${dateBR(o.createdAt)}
-        </td>
+          :
 
-      </tr>`;
-  }).join('');
+          '<span class="muted">Aguardando ingressos</span>';
+
+
+        const statusClass =
+          String(
+            o.status||''
+          ).toLowerCase();
+
+
+        return `
+
+          <tr>
+
+            <td>
+
+              <strong>
+                ${escapeHtml(
+                  o.buyer?.name
+                )}
+              </strong>
+
+              <small>
+                Pedido:
+                ${escapeHtml(
+                  o.orderId
+                )}
+              </small>
+
+            </td>
+
+
+            <td>
+              ${formatCPF(
+                o.buyer?.cpf
+              )}
+            </td>
+
+
+            <td>
+
+              ${formatPhone(
+                o.buyer?.phone
+              )}
+
+              <small>
+                ${escapeHtml(
+                  o.buyer?.email
+                )}
+              </small>
+
+            </td>
+
+
+            <td>
+              ${ticketsHtml}
+            </td>
+
+
+            <td>
+
+              <strong>
+                ${money(
+                  o.total
+                )}
+              </strong>
+
+              <small>
+                ${tickets.length}
+                ingresso(s)
+              </small>
+
+            </td>
+
+
+            <td>
+
+              <span
+                class="badge ${statusClass}"
+              >
+                ${escapeHtml(
+                  o.status
+                )}
+              </span>
+
+            </td>
+
+
+            <td>
+              ${dateBR(
+                o.createdAt
+              )}
+            </td>
+
+          </tr>
+
+        `;
+
+      }
+    ).join('');
+
 }
+
+
+/* ========================================================
+   LIMPAR BUSCA
+   ======================================================== */
 
 function clearSearch(){
-  document.getElementById('search').value='';
+
+  document
+    .getElementById(
+      'search'
+    )
+    .value='';
+
   renderOrders();
+
 }
+
+
+/* ========================================================
+   EXPORTAR CSV
+   ======================================================== */
 
 function exportCSV(){
 
   if(!orders.length){
-    alert('Não há pedidos para exportar.');
+
+    alert(
+      'Não há pedidos para exportar.'
+    );
+
     return;
+
   }
 
-  const rows=[
+
+  const rows = [
+
     [
       'Pedido',
       'Nome',
@@ -499,57 +1837,149 @@ function exportCSV(){
       'Ingressos',
       'Data'
     ]
+
   ];
 
-  orders.forEach(o=>{
-    const tickets=o.tickets||[];
 
-    rows.push([
-      o.orderId,
-      o.buyer?.name||'',
-      o.buyer?.email||'',
-      o.buyer?.phone||'',
-      o.buyer?.cpf||'',
-      o.status||'',
-      Number(o.total||0).toFixed(2).replace('.',','),
-      tickets.map(t=>t.batchName).join(' | '),
-      dateBR(o.createdAt)
-    ]);
-  });
+  orders.forEach(
+    o=>{
 
-  const csv=rows.map(row=>
-    row.map(v=>{
-      const s=String(v??'').replace(/"/g,'""');
-      return `"${s}"`;
-    }).join(';')
-  ).join('\r\n');
+      const tickets =
+        o.tickets || [];
 
-  const blob=new Blob(
-    ['\ufeff'+csv],
-    {type:'text/csv;charset=utf-8;'}
+      rows.push([
+
+        o.orderId,
+
+        o.buyer?.name || '',
+
+        o.buyer?.email || '',
+
+        o.buyer?.phone || '',
+
+        o.buyer?.cpf || '',
+
+        o.status || '',
+
+        Number(
+          o.total || 0
+        )
+        .toFixed(2)
+        .replace(
+          '.',
+          ','
+        ),
+
+        tickets
+          .map(
+            t=>t.batchName
+          )
+          .join(' | '),
+
+        dateBR(
+          o.createdAt
+        )
+
+      ]);
+
+    }
   );
 
-  const url=URL.createObjectURL(blob);
-  const a=document.createElement('a');
+
+  const csv =
+    rows.map(
+      row=>
+
+        row.map(
+          v=>{
+
+            const s =
+              String(
+                v ?? ''
+              )
+              .replace(
+                /"/g,
+                '""'
+              );
+
+            return `"${s}"`;
+
+          }
+        ).join(';')
+
+    ).join('\r\n');
+
+
+  const blob =
+    new Blob(
+      [
+        '\ufeff'+csv
+      ],
+      {
+        type:
+          'text/csv;charset=utf-8;'
+      }
+    );
+
+
+  const url =
+    URL.createObjectURL(
+      blob
+    );
+
+  const a =
+    document.createElement(
+      'a'
+    );
 
   a.href=url;
-  a.download='compradores-baile-da-madrid.csv';
+
+  a.download =
+    'compradores-baile-da-madrid.csv';
+
   a.click();
 
-  URL.revokeObjectURL(url);
+  URL.revokeObjectURL(
+    url
+  );
+
 }
+
+
+/* ========================================================
+   INICIAR
+   ======================================================== */
 
 if(token){
+
   showPanel();
-  loadAll().catch(()=>{
-    logout();
-  });
+
+  loadAll()
+    .catch(
+      ()=>{
+        logout();
+      }
+    );
+
 }
 
-document.getElementById('adminToken').addEventListener('keydown',e=>{
-  if(e.key==='Enter')login();
-});
+
+document
+  .getElementById(
+    'adminToken'
+  )
+  .addEventListener(
+    'keydown',
+    e=>{
+      if(
+        e.key==='Enter'
+      ){
+        login();
+      }
+    }
+  );
+
 </script>
 
 </body>
-</html>
+ </html>
