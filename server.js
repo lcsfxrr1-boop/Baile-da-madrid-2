@@ -5,9 +5,11 @@ const path=require('path');
 const crypto=require('crypto');
 const QRCode=require('qrcode');
 const nodemailer=require('nodemailer');
+const net=require('net');
 const {Pool}=require('pg');
 
 const app=express();
+
 app.use(express.json({limit:'100kb'}));
 app.use(express.static(path.join(__dirname)));
 
@@ -244,55 +246,188 @@ app.get(
   '/api/admin/test-smtp',
   requireAdmin,
   async(req,res)=>{
+
+    const host=
+      process.env.SMTP_HOST||'';
+
+    const port=
+      Number(process.env.SMTP_PORT||587);
+
+    const secure=
+      String(
+        process.env.SMTP_SECURE||'false'
+      ).toLowerCase()==='true';
+
     try{
+
       if(!mailReady()){
         return res.status(500).json({
           ok:false,
-
+          stage:'config',
           error:
             'SMTP incompleto. Verifique SMTP_HOST, SMTP_USER, SMTP_PASS e EMAIL_FROM.'
         });
       }
+
+      /*
+       * TESTE 1
+       * Verifica se o Render consegue abrir
+       * uma conexão TCP com o servidor SMTP.
+       */
+
+      const tcpResult=
+        await new Promise((resolve)=>{
+
+          const socket=
+            new net.Socket();
+
+          let finished=false;
+
+          const finish=(result)=>{
+
+            if(finished)return;
+
+            finished=true;
+
+            clearTimeout(timer);
+
+            try{
+              socket.destroy();
+            }catch{}
+
+            resolve(result);
+          };
+
+          const timer=
+            setTimeout(()=>{
+
+              finish({
+                ok:false,
+
+                error:
+                  'Timeout ao conectar no servidor SMTP.',
+
+                code:
+                  'ETIMEDOUT',
+
+                command:
+                  'CONN'
+              });
+
+            },15000);
+
+          socket.connect(
+            port,
+            host,
+            ()=>{
+
+              finish({
+                ok:true
+              });
+
+            }
+          );
+
+          socket.on(
+            'error',
+            err=>{
+
+              finish({
+                ok:false,
+
+                error:
+                  err.message||
+                  'Erro na conexão TCP.',
+
+                code:
+                  err.code||null,
+
+                command:
+                  err.command||
+                  'CONN'
+              });
+
+            }
+          );
+
+        });
+
+
+      /*
+       * Se a conexão TCP falhar,
+       * o problema está antes da autenticação.
+       */
+
+      if(!tcpResult.ok){
+
+        return res.status(500).json({
+
+          ok:false,
+
+          stage:'tcp',
+
+          error:
+            tcpResult.error,
+
+          code:
+            tcpResult.code,
+
+          command:
+            tcpResult.command,
+
+          host,
+          port,
+          secure
+        });
+
+      }
+
+
+      /*
+       * TESTE 2
+       * Agora testa o Nodemailer e a autenticação SMTP.
+       */
 
       const transporter=
         getMailer();
 
       await transporter.verify();
 
-      res.json({
+      return res.json({
+
         ok:true,
+
+        stage:'smtp',
 
         message:
           'SMTP conectado e autenticado com sucesso.',
 
-        host:
-          process.env.SMTP_HOST,
+        host,
 
-        port:
-          Number(
-            process.env.SMTP_PORT||587
-          ),
+        port,
 
-        secure:
-          String(
-            process.env.SMTP_SECURE||'false'
-          ).toLowerCase()==='true',
+        secure,
 
         user:
           process.env.SMTP_USER,
 
         from:
           process.env.EMAIL_FROM
+
       });
 
     }catch(e){
+
       console.error(
         'Erro no teste SMTP:',
         e
       );
 
-      res.status(500).json({
+      return res.status(500).json({
+
         ok:false,
+
+        stage:'smtp',
 
         error:
           e.message||
@@ -305,8 +440,16 @@ app.get(
           e.command||null,
 
         response:
-          e.response||null
+          e.response||null,
+
+        host,
+
+        port,
+
+        secure
+
       });
+
     }
   }
 );
@@ -317,6 +460,7 @@ app.get(
    ======================================================== */
 
 async function mpRequest(url,options={}){
+
   if(!ACCESS_TOKEN){
     throw new Error(
       'MP_ACCESS_TOKEN não configurado no servidor.'
@@ -344,6 +488,7 @@ async function mpRequest(url,options={}){
   }
 
   if(!r.ok){
+
     console.error(
       'Mercado Pago:',
       r.status,
@@ -369,6 +514,7 @@ function ticketUrl(token){
 }
 
 async function buildTicket(order,item){
+
   if(!PUBLIC_BASE_URL){
     throw new Error(
       'PUBLIC_BASE_URL não configurado.'
@@ -417,6 +563,7 @@ function esc(v){
 }
 
 function ticketHtml(t){
+
   return `
     <div style="
       max-width:520px;
@@ -519,6 +666,7 @@ function ticketHtml(t){
    ======================================================== */
 
 async function getOrder(orderId){
+
   const r=
     await db(
       'SELECT * FROM orders WHERE order_id=$1',
@@ -530,10 +678,15 @@ async function getOrder(orderId){
   const o=r.rows[0];
 
   return {
+
     orderId:o.order_id,
+
     paymentId:o.payment_id,
+
     status:o.status,
+
     total:Number(o.total),
+
     items:o.items,
 
     buyer:{
@@ -544,13 +697,18 @@ async function getOrder(orderId){
     },
 
     createdAt:o.created_at,
+
     updatedAt:o.updated_at,
+
     emailSentAt:o.email_sent_at,
+
     emailError:o.email_error
+
   };
 }
 
 async function countTickets(orderId){
+
   const r=
     await db(
       'SELECT COUNT(*)::int AS n FROM tickets WHERE order_id=$1',
@@ -561,6 +719,7 @@ async function countTickets(orderId){
 }
 
 async function getTickets(orderId){
+
   const r=
     await db(
       `
@@ -612,12 +771,15 @@ async function fulfillOrder(orderId){
     const flat=[];
 
     for(const item of order.items){
+
       for(
         let i=0;
         i<item.quantity;
         i++
       ){
+
         flat.push(item);
+
       }
     }
 
@@ -723,6 +885,7 @@ async function fulfillOrder(orderId){
 
         const attachments=
           tickets.map(t=>({
+
             filename:
               `${t.ticket_id}.png`,
 
@@ -734,6 +897,7 @@ async function fulfillOrder(orderId){
 
             cid:
               `qr-${t.ticket_id}`
+
           }));
 
         await transporter.sendMail({
@@ -800,6 +964,7 @@ async function fulfillOrder(orderId){
             `,
 
           attachments
+
         });
 
         await db(
@@ -876,12 +1041,14 @@ function fulfillLocked(id){
   const p=
     fulfillOrder(id)
       .catch(e=>{
+
         console.error(
           'Emissão:',
           e
         );
 
         throw e;
+
       })
       .finally(()=>
         locks.delete(id)
@@ -900,6 +1067,7 @@ function fulfillLocked(id){
 app.get(
   '/health',
   async(req,res)=>{
+
     try{
 
       if(pool){
@@ -922,6 +1090,7 @@ app.get(
       });
 
     }
+
   }
 );
 
@@ -933,6 +1102,7 @@ app.get(
 app.post(
   '/api/create-pix',
   async(req,res)=>{
+
     try{
 
       const {
@@ -965,17 +1135,21 @@ app.post(
         !email||
         cpf.length!==11
       ){
+
         return res.status(400).json({
           error:
             'Informe nome, e-mail e CPF válidos.'
         });
+
       }
 
       if(phone.length!==11){
+
         return res.status(400).json({
           error:
             'Informe um telefone válido.'
         });
+
       }
 
       const {
@@ -1024,11 +1198,14 @@ app.post(
             number:cpf
           }
         }
+
       };
 
       if(PUBLIC_BASE_URL){
+
         body.notification_url=
           `${PUBLIC_BASE_URL}/api/mercadopago/webhook`;
+
       }
 
       const payment=
@@ -1056,9 +1233,11 @@ app.post(
         !tx?.qr_code||
         !tx?.qr_code_base64
       ){
+
         throw new Error(
           'Mercado Pago não retornou o QR Code PIX.'
         );
+
       }
 
       await db(
@@ -1114,6 +1293,7 @@ app.post(
       });
 
     }
+
   }
 );
 
@@ -1125,6 +1305,7 @@ app.post(
 app.get(
   '/api/payment-status/:orderId',
   async(req,res)=>{
+
     try{
 
       const order=
@@ -1133,10 +1314,12 @@ app.get(
         );
 
       if(!order){
+
         return res.status(404).json({
           error:
             'Compra não encontrada.'
         });
+
       }
 
       const payment=
@@ -1197,6 +1380,7 @@ app.get(
         emailError:
           finalOrder.emailError||
           null
+
       });
 
     }catch(e){
@@ -1208,6 +1392,7 @@ app.get(
       });
 
     }
+
   }
 );
 
@@ -1260,10 +1445,13 @@ app.post(
         if(
           payment.status==='approved'
         ){
+
           await fulfillLocked(
             orderId
           );
+
         }
+
       }
 
     }catch(e){
@@ -1274,6 +1462,7 @@ app.post(
       );
 
     }
+
   }
 );
 
@@ -1286,6 +1475,7 @@ app.post(
   '/api/tickets/validate',
   requireAdmin,
   async(req,res)=>{
+
     try{
 
       const token=
@@ -1294,10 +1484,12 @@ app.post(
         );
 
       if(!token){
+
         return res.status(400).json({
           error:
             'QR Code inválido.'
         });
+
       }
 
       const h=
@@ -1321,24 +1513,29 @@ app.post(
         r.rows[0];
 
       if(!t){
+
         return res.status(404).json({
           valid:false,
           error:
             'Ingresso não encontrado.'
         });
+
       }
 
       if(
         t.order_status!=='approved'
       ){
+
         return res.status(400).json({
           valid:false,
           error:
             'Pagamento não aprovado.'
         });
+
       }
 
       if(t.used_at){
+
         return res.status(409).json({
           valid:false,
           used:true,
@@ -1358,7 +1555,9 @@ app.post(
             usedAt:
               t.used_at
           }
+
         });
+
       }
 
       const used=
@@ -1374,17 +1573,22 @@ app.post(
         );
 
       if(!used.rows[0]){
+
         return res.status(409).json({
           valid:false,
           used:true,
           error:
             'Este ingresso já foi utilizado.'
         });
+
       }
 
       return res.json({
+
         valid:true,
+
         used:false,
+
         message:
           'Entrada liberada.',
 
@@ -1398,6 +1602,7 @@ app.post(
           buyerName:
             t.buyer_name
         }
+
       });
 
     }catch(e){
@@ -1409,6 +1614,7 @@ app.post(
       });
 
     }
+
   }
 );
 
@@ -1421,6 +1627,7 @@ app.post(
   '/api/tickets/resend/:orderId',
   requireAdmin,
   async(req,res)=>{
+
     try{
 
       const order=
@@ -1429,19 +1636,23 @@ app.post(
         );
 
       if(!order){
+
         return res.status(404).json({
           error:
             'Compra não encontrada.'
         });
+
       }
 
       if(
         order.status!=='approved'
       ){
+
         return res.status(400).json({
           error:
             'Pagamento ainda não aprovado.'
         });
+
       }
 
       const tickets=
@@ -1453,9 +1664,11 @@ app.post(
         tickets.length!==
         totalTicketCount(order)
       ){
+
         await fulfillLocked(
           order.orderId
         );
+
       }
 
       const fresh=
@@ -1472,9 +1685,11 @@ app.post(
         getMailer();
 
       if(!transporter){
+
         throw new Error(
           'SMTP não configurado.'
         );
+
       }
 
       await transporter.sendMail({
@@ -1498,6 +1713,7 @@ app.post(
 
         attachments:
           ts.map(t=>({
+
             filename:
               `${t.ticket_id}.png`,
 
@@ -1509,7 +1725,9 @@ app.post(
 
             cid:
               `qr-${t.ticket_id}`
+
           }))
+
       });
 
       await db(
@@ -1539,6 +1757,7 @@ app.post(
       });
 
     }
+
   }
 );
 
@@ -1551,6 +1770,7 @@ app.get(
   '/api/tickets/stats',
   requireAdmin,
   async(req,res)=>{
+
     try{
 
       const a=
@@ -1593,6 +1813,7 @@ app.get(
             0,
             sold-used
           )
+
       });
 
     }catch(e){
@@ -1602,6 +1823,7 @@ app.get(
       });
 
     }
+
   }
 );
 
@@ -1614,6 +1836,7 @@ app.post(
   '/api/admin/test-order',
   requireAdmin,
   async(req,res)=>{
+
     try{
 
       const body=
@@ -1627,7 +1850,8 @@ app.post(
 
       const email=
         String(
-          body.email||''
+          body.email||
+          ''
         ).trim();
 
       const phone=
@@ -1649,24 +1873,30 @@ app.post(
         );
 
       if(!email){
+
         return res.status(400).json({
           error:
             'Informe o e-mail que receberá o ingresso de teste.'
         });
+
       }
 
       if(!batches[batchId]){
+
         return res.status(400).json({
           error:
             'Tipo de ingresso de teste inválido.'
         });
+
       }
 
       if(cpf.length!==11){
+
         return res.status(400).json({
           error:
             'CPF de teste inválido.'
         });
+
       }
 
       const orderId=
@@ -1725,6 +1955,7 @@ app.post(
       res.json({
 
         ok:true,
+
         test:true,
 
         orderId,
@@ -1743,6 +1974,7 @@ app.post(
 
         tickets:
           tickets.map(t=>({
+
             ticketId:
               t.ticket_id,
 
@@ -1751,7 +1983,9 @@ app.post(
 
             usedAt:
               t.used_at
+
           }))
+
       });
 
     }catch(e){
@@ -1768,6 +2002,7 @@ app.post(
       });
 
     }
+
   }
 );
 
@@ -1780,6 +2015,7 @@ app.delete(
   '/api/admin/test-orders',
   requireAdmin,
   async(req,res)=>{
+
     try{
 
       const result=
@@ -1792,9 +2028,12 @@ app.delete(
         );
 
       res.json({
+
         ok:true,
+
         deleted:
           result.rowCount
+
       });
 
     }catch(e){
@@ -1811,6 +2050,7 @@ app.delete(
       });
 
     }
+
   }
 );
 
@@ -1837,6 +2077,7 @@ app.get(
 
 initDb()
   .then(()=>
+
     app.listen(
       PORT,
       '0.0.0.0',
@@ -1845,6 +2086,7 @@ initDb()
           `${EVENT_NAME} em http://0.0.0.0:${PORT}`
         )
     )
+
   )
   .catch(e=>{
 
@@ -1854,4 +2096,5 @@ initDb()
     );
 
     process.exit(1);
+
   });
