@@ -26,7 +26,8 @@ const RESEND_API_KEY =
   process.env.RESEND_API_KEY || '';
 
 const EMAIL_FROM =
-  process.env.EMAIL_FROM || '';
+  process.env.EMAIL_FROM ||
+  'onboarding@resend.dev';
 
 const EVENT_NAME =
   'Baile da Madrid 2.0';
@@ -47,7 +48,6 @@ const resend =
    ======================================================== */
 
 const batches = {
-
   pre: {
     name: 'Pré-Venda',
     price: 10
@@ -72,7 +72,6 @@ const batches = {
     name: 'Área VIP',
     price: 70
   }
-
 };
 
 
@@ -81,17 +80,13 @@ const batches = {
    ======================================================== */
 
 if (!process.env.DATABASE_URL) {
-
   console.warn(
     'DATABASE_URL não configurado.'
   );
-
 }
-
 
 const pool =
   process.env.DATABASE_URL
-
     ? new Pool({
         connectionString:
           process.env.DATABASE_URL,
@@ -102,28 +97,21 @@ const pool =
 
         max: 5
       })
-
     : null;
 
 
-async function db(
-  query,
-  params = []
-) {
+async function db(query, params = []) {
 
   if (!pool) {
-
     throw new Error(
       'DATABASE_URL não configurado.'
     );
-
   }
 
   return pool.query(
     query,
     params
   );
-
 }
 
 
@@ -134,7 +122,6 @@ async function db(
 async function initDb() {
 
   if (!pool) return;
-
 
   await db(`
     CREATE TABLE IF NOT EXISTS orders(
@@ -158,8 +145,7 @@ async function initDb() {
       items JSONB NOT NULL,
 
       created_at
-        TIMESTAMPTZ
-        NOT NULL
+        TIMESTAMPTZ NOT NULL
         DEFAULT NOW(),
 
       updated_at
@@ -169,7 +155,6 @@ async function initDb() {
         TIMESTAMPTZ,
 
       email_error TEXT
-
     )
   `);
 
@@ -198,13 +183,10 @@ async function initDb() {
       qr_base64 TEXT NOT NULL,
 
       created_at
-        TIMESTAMPTZ
-        NOT NULL
+        TIMESTAMPTZ NOT NULL
         DEFAULT NOW(),
 
-      used_at
-        TIMESTAMPTZ
-
+      used_at TIMESTAMPTZ
     )
   `);
 
@@ -222,46 +204,43 @@ async function initDb() {
     ON tickets(order_id)
   `);
 
+
+  await db(`
+    CREATE INDEX IF NOT EXISTS
+    idx_tickets_ticket_id
+    ON tickets(ticket_id)
+  `);
 }
 
 
 /* ========================================================
-   UTILIDADES
+   UTILITÁRIOS
    ======================================================== */
 
-function cleanCPF(value) {
+function cleanCPF(v) {
 
-  return String(
-    value || ''
-  ).replace(
-    /\D/g,
-    ''
-  );
-
+  return String(v || '')
+    .replace(/\D/g, '');
 }
 
 
 function splitName(name) {
 
-  const parts =
+  const p =
     String(name || '')
       .trim()
       .split(/\s+/)
       .filter(Boolean);
 
-
   return {
 
     first_name:
-      parts.shift() ||
-      'Cliente',
+      p.shift() || 'Cliente',
 
     last_name:
-      parts.join(' ') ||
+      p.join(' ') ||
       'Baile Madrid'
-
   };
-
 }
 
 
@@ -271,13 +250,10 @@ function calculateItems(items) {
     !Array.isArray(items) ||
     !items.length
   ) {
-
     throw new Error(
       'Nenhum ingresso selecionado.'
     );
-
   }
-
 
   let total = 0;
 
@@ -299,11 +275,9 @@ function calculateItems(items) {
       quantity < 1 ||
       quantity > 10
     ) {
-
       throw new Error(
         'Ingresso ou quantidade inválida.'
       );
-
     }
 
 
@@ -313,36 +287,29 @@ function calculateItems(items) {
 
     normalized.push({
 
-      id:
-        item.id,
+      id: item.id,
 
-      name:
-        batch.name,
+      name: batch.name,
 
       quantity,
 
       unit_price:
         batch.price
-
     });
-
   }
 
 
-  const totalTickets =
+  if (
     normalized.reduce(
-      (sum, item) =>
-        sum + item.quantity,
+      (s, i) =>
+        s + i.quantity,
       0
-    );
-
-
-  if (totalTickets > 10) {
+    ) > 10
+  ) {
 
     throw new Error(
       'Limite máximo de 10 ingressos por compra.'
     );
-
   }
 
 
@@ -350,7 +317,6 @@ function calculateItems(items) {
     normalized,
     total
   };
-
 }
 
 
@@ -359,33 +325,28 @@ function totalTicketCount(order) {
   return (order.items || [])
     .reduce(
       (sum, item) =>
-        sum + Number(
+        sum +
+        Number(
           item.quantity || 0
         ),
       0
     );
-
 }
 
 
 function makeTicketCode() {
 
-  return (
-    `BMD2-${crypto
-      .randomBytes(5)
-      .toString('hex')
-      .toUpperCase()}`
-  );
-
+  return `BMD2-${crypto
+    .randomBytes(5)
+    .toString('hex')
+    .toUpperCase()}`;
 }
 
 
 function makeTicketToken() {
 
-  return crypto.randomBytes(
-    32
-  ).toString('base64url');
-
+  return crypto.randomBytes(32)
+    .toString('base64url');
 }
 
 
@@ -393,20 +354,12 @@ function hashToken(token) {
 
   return crypto
     .createHash('sha256')
-    .update(
-      String(token),
-      'utf8'
-    )
+    .update(token)
     .digest('hex');
-
 }
 
 
-function requireAdmin(
-  req,
-  res,
-  next
-) {
+function requireAdmin(req, res, next) {
 
   const supplied =
     req.get('x-admin-token') ||
@@ -421,108 +374,133 @@ function requireAdmin(
 
       error:
         'ADMIN_TOKEN não configurado no servidor.'
-
     });
-
   }
 
 
-  if (
-    supplied !== ADMIN_TOKEN
-  ) {
+  if (supplied !== ADMIN_TOKEN) {
 
     return res.status(401).json({
 
       error:
         'Acesso não autorizado.'
-
     });
-
   }
 
 
   next();
-
 }
 
 
 /* ========================================================
-   RESEND STATUS
+   RESEND
+   ======================================================== */
+
+function mailReady() {
+
+  return Boolean(
+    resend &&
+    RESEND_API_KEY &&
+    EMAIL_FROM
+  );
+}
+
+
+/* ========================================================
+   TESTE RESEND
    ======================================================== */
 
 app.get(
-  '/api/admin/test-email',
+  '/api/admin/test-smtp',
   requireAdmin,
   async (req, res) => {
 
     try {
 
-      if (!resend) {
+      if (!mailReady()) {
 
         return res.status(500).json({
 
           ok: false,
 
           error:
-            'RESEND_API_KEY não configurada.'
-
+            'Resend não configurado. Verifique RESEND_API_KEY e EMAIL_FROM.'
         });
-
       }
 
 
-      if (!EMAIL_FROM) {
+      /*
+       * O endpoint antigo se chama test-smtp
+       * para não precisar alterar seu painel.
+       *
+       * Aqui ele testa o Resend enviando
+       * um e-mail para o endereço informado.
+       */
 
-        return res.status(500).json({
+      const to =
+        String(
+          req.query.to ||
+          req.body?.to ||
+          ''
+        ).trim();
 
-          ok: false,
 
-          error:
-            'EMAIL_FROM não configurado.'
+      if (!to) {
 
+        return res.json({
+
+          ok: true,
+
+          provider: 'Resend',
+
+          message:
+            'Resend configurado corretamente. Informe ?to=EMAIL para realizar um envio de teste.',
+
+          from:
+            EMAIL_FROM
         });
-
       }
 
 
-      const { data, error } =
+      const result =
         await resend.emails.send({
 
           from:
             EMAIL_FROM,
 
-          to: [
-            req.query.email ||
-            EMAIL_FROM
-          ],
+          to,
 
           subject:
-            `Teste — ${EVENT_NAME}`,
+            'Teste de e-mail — Baile da Madrid 2.0',
 
           html:
-            '<h2>Resend funcionando!</h2><p>O envio de e-mail está funcionando corretamente.</p>'
+            `
+              <div style="
+                font-family:Arial,sans-serif;
+                padding:30px
+              ">
 
+                <h2>
+                  Resend funcionando!
+                </h2>
+
+                <p>
+                  Este é um teste do sistema
+                  de e-mails do
+                  ${EVENT_NAME}.
+                </p>
+
+              </div>
+            `
         });
 
 
-      if (error) {
+      if (result.error) {
 
-        console.error(
-          'Resend:',
-          error
+        throw new Error(
+          result.error.message ||
+          'Erro ao enviar pelo Resend.'
         );
-
-
-        return res.status(500).json({
-
-          ok: false,
-
-          error:
-            error.message ||
-            'Erro no Resend.'
-
-        });
-
       }
 
 
@@ -530,20 +508,26 @@ app.get(
 
         ok: true,
 
+        provider:
+          'Resend',
+
         message:
-          'E-mail enviado pelo Resend.',
+          'E-mail de teste enviado com sucesso.',
 
         id:
-          data?.id || null
+          result.data?.id || null,
 
+        from:
+          EMAIL_FROM,
+
+        to
       });
 
-    }
 
-    catch (e) {
+    } catch (e) {
 
       console.error(
-        'Teste Resend:',
+        'Erro no teste Resend:',
         e
       );
 
@@ -554,12 +538,12 @@ app.get(
 
         error:
           e.message ||
-          'Falha no Resend.'
+          'Falha no Resend.',
 
+        code:
+          e.code || null
       });
-
     }
-
   }
 );
 
@@ -578,15 +562,13 @@ async function mpRequest(
     throw new Error(
       'MP_ACCESS_TOKEN não configurado no servidor.'
     );
-
   }
 
 
-  const response =
+  const r =
     await fetch(
       url,
       {
-
         ...options,
 
         headers: {
@@ -598,15 +580,13 @@ async function mpRequest(
             'application/json',
 
           ...(options.headers || {})
-
         }
-
       }
     );
 
 
   const text =
-    await response.text();
+    await r.text();
 
 
   let data;
@@ -617,22 +597,19 @@ async function mpRequest(
     data =
       JSON.parse(text);
 
-  }
-
-  catch {
+  } catch {
 
     data = {
       message: text
     };
-
   }
 
 
-  if (!response.ok) {
+  if (!r.ok) {
 
     console.error(
       'Mercado Pago:',
-      response.status,
+      r.status,
       data
     );
 
@@ -641,45 +618,39 @@ async function mpRequest(
       data.message ||
       'Erro no Mercado Pago.'
     );
-
   }
 
 
   return data;
-
 }
 
 
 /* ========================================================
-   URL DO INGRESSO
+   INGRESSOS
    ======================================================== */
 
 function ticketUrl(token) {
+
+  return (
+    `${PUBLIC_BASE_URL}` +
+    `/validar.html?ticket=` +
+    encodeURIComponent(token)
+  );
+}
+
+
+async function buildTicket(
+  order,
+  item
+) {
 
   if (!PUBLIC_BASE_URL) {
 
     throw new Error(
       'PUBLIC_BASE_URL não configurado.'
     );
-
   }
 
-
-  return (
-    `${PUBLIC_BASE_URL}/validar.html?ticket=${encodeURIComponent(token)}`
-  );
-
-}
-
-
-/* ========================================================
-   CRIAR INGRESSO
-   ======================================================== */
-
-async function buildTicket(
-  order,
-  item
-) {
 
   const token =
     makeTicketToken();
@@ -689,32 +660,16 @@ async function buildTicket(
     makeTicketCode();
 
 
-  const url =
-    ticketUrl(token);
-
-
-  console.log(
-    'Criando ingresso:',
-    ticketId,
-    'tokenLength=',
-    token.length
-  );
-
-
   const qrDataUrl =
     await QRCode.toDataURL(
-      url,
+      ticketUrl(token),
       {
-
         errorCorrectionLevel:
           'H',
 
-        margin:
-          2,
+        margin: 2,
 
-        width:
-          360
-
+        width: 360
       }
     );
 
@@ -722,8 +677,6 @@ async function buildTicket(
   return {
 
     ticketId,
-
-    token,
 
     tokenHash:
       hashToken(token),
@@ -745,50 +698,28 @@ async function buildTicket(
 
     qrBase64:
       qrDataUrl.split(',')[1]
-
   };
-
 }
 
 
-/* ========================================================
-   ESCAPAR HTML
-   ======================================================== */
+function esc(v) {
 
-function esc(value) {
-
-  return String(
-    value ?? ''
-  ).replace(
-    /[&<>"']/g,
-    char => ({
-
-      '&':
-        '&amp;',
-
-      '<':
-        '&lt;',
-
-      '>':
-        '&gt;',
-
-      '"':
-        '&quot;',
-
-      "'":
-        '&#39;'
-
-    }[char])
-  );
-
+  return String(v ?? '')
+    .replace(
+      /[&<>"']/g,
+      c =>
+        ({
+          '&': '&amp;',
+          '<': '&lt;',
+          '>': '&gt;',
+          '"': '&quot;',
+          "'": '&#39;'
+        }[c])
+    );
 }
 
 
-/* ========================================================
-   HTML DO INGRESSO
-   ======================================================== */
-
-function ticketHtml(ticket) {
+function ticketHtml(t) {
 
   return `
 
@@ -827,12 +758,12 @@ function ticketHtml(ticket) {
         font-weight:700;
         margin-bottom:18px
       ">
-        ${esc(ticket.batchName)}
+        ${esc(t.batchName)}
       </div>
 
 
       <img
-        src="cid:qr-${ticket.ticketId}"
+        src="cid:qr-${t.ticketId}"
         alt="QR Code do ingresso"
         width="250"
         height="250"
@@ -859,7 +790,7 @@ function ticketHtml(ticket) {
         font-weight:800;
         margin:3px 0 14px
       ">
-        ${esc(ticket.buyerName)}
+        ${esc(t.buyerName)}
       </div>
 
 
@@ -878,7 +809,7 @@ function ticketHtml(ticket) {
         letter-spacing:1px;
         margin-top:4px
       ">
-        ${esc(ticket.ticketId)}
+        ${esc(t.ticketId)}
       </div>
 
 
@@ -892,9 +823,7 @@ function ticketHtml(ticket) {
       </p>
 
     </div>
-
   `;
-
 }
 
 
@@ -902,11 +831,9 @@ function ticketHtml(ticket) {
    PEDIDOS
    ======================================================== */
 
-async function getOrder(
-  orderId
-) {
+async function getOrder(orderId) {
 
-  const result =
+  const r =
     await db(
       `
         SELECT *
@@ -917,64 +844,58 @@ async function getOrder(
     );
 
 
-  if (!result.rows[0]) {
-
+  if (!r.rows[0])
     return null;
 
-  }
 
-
-  const row =
-    result.rows[0];
+  const o =
+    r.rows[0];
 
 
   return {
 
     orderId:
-      row.order_id,
+      o.order_id,
 
     paymentId:
-      row.payment_id,
+      o.payment_id,
 
     status:
-      row.status,
+      o.status,
 
     total:
-      Number(row.total),
+      Number(o.total),
 
     items:
-      row.items,
+      o.items,
 
     buyer: {
 
       name:
-        row.buyer_name,
+        o.buyer_name,
 
       email:
-        row.buyer_email,
+        o.buyer_email,
 
       cpf:
-        row.buyer_cpf,
+        o.buyer_cpf,
 
       phone:
-        row.buyer_phone
-
+        o.buyer_phone
     },
 
     createdAt:
-      row.created_at,
+      o.created_at,
 
     updatedAt:
-      row.updated_at,
+      o.updated_at,
 
     emailSentAt:
-      row.email_sent_at,
+      o.email_sent_at,
 
     emailError:
-      row.email_error
-
+      o.email_error
   };
-
 }
 
 
@@ -982,10 +903,11 @@ async function countTickets(
   orderId
 ) {
 
-  const result =
+  const r =
     await db(
       `
-        SELECT COUNT(*)::int AS n
+        SELECT
+          COUNT(*)::int AS n
         FROM tickets
         WHERE order_id=$1
       `,
@@ -993,8 +915,7 @@ async function countTickets(
     );
 
 
-  return result.rows[0].n;
-
+  return r.rows[0].n;
 }
 
 
@@ -1002,7 +923,7 @@ async function getTickets(
   orderId
 ) {
 
-  const result =
+  const r =
     await db(
       `
         SELECT
@@ -1023,160 +944,12 @@ async function getTickets(
     );
 
 
-  return result.rows;
-
+  return r.rows;
 }
 
 
 /* ========================================================
-   ENVIAR EMAIL PELO RESEND
-   ======================================================== */
-
-async function sendTicketEmail(
-  order,
-  tickets,
-  isResend = false
-) {
-
-  if (!resend) {
-
-    throw new Error(
-      'RESEND_API_KEY não configurada.'
-    );
-
-  }
-
-
-  if (!EMAIL_FROM) {
-
-    throw new Error(
-      'EMAIL_FROM não configurado.'
-    );
-
-  }
-
-
-  const attachments =
-    tickets.map(ticket => ({
-
-      filename:
-        `${ticket.ticket_id}.png`,
-
-      content:
-        ticket.qr_base64,
-
-      contentId:
-        `qr-${ticket.ticket_id}`
-
-    }));
-
-
-  const subject =
-    isResend
-      ? `Reenvio — ${EVENT_NAME}`
-      : `Seu ingresso — ${EVENT_NAME}`;
-
-
-  const { data, error } =
-    await resend.emails.send({
-
-      from:
-        EMAIL_FROM,
-
-      to: [
-        order.buyer.email
-      ],
-
-      subject,
-
-      text:
-        `Pagamento aprovado. Seus ${tickets.length} ingresso(s) para ${EVENT_NAME} estão neste e-mail.`,
-
-      html: `
-
-        <div style="
-          background:#070707;
-          padding:28px 12px;
-          font-family:Arial,sans-serif
-        ">
-
-          <div style="
-            max-width:620px;
-            margin:auto;
-            color:#fff;
-            text-align:center
-          ">
-
-            <div style="
-              font-size:12px;
-              letter-spacing:3px;
-              color:#ff3a4a;
-              font-weight:800
-            ">
-              PAGAMENTO APROVADO
-            </div>
-
-
-            <h1>
-              ${esc(EVENT_NAME)}
-            </h1>
-
-
-            <p style="color:#bbb">
-              Olá,
-              ${esc(order.buyer.name)}.
-              Guarde este e-mail e apresente
-              o QR Code correspondente na entrada.
-            </p>
-
-
-            ${tickets
-              .map(ticketHtml)
-              .join('')}
-
-
-            <p style="
-              color:#777;
-              font-size:11px
-            ">
-              Pedido:
-              ${esc(order.orderId)}
-            </p>
-
-          </div>
-
-        </div>
-
-      `,
-
-      attachments
-
-    });
-
-
-  if (error) {
-
-    console.error(
-      'Erro Resend:',
-      error
-    );
-
-
-    throw new Error(
-      error.message ||
-      'Resend não conseguiu enviar o e-mail.'
-    );
-
-  }
-
-
-  return data;
-
-}
-
-
-/* ========================================================
-   GERAR INGRESSOS
+   GERAR INGRESSO + ENVIAR EMAIL
    ======================================================== */
 
 async function fulfillOrder(
@@ -1184,18 +957,14 @@ async function fulfillOrder(
 ) {
 
   const order =
-    await getOrder(
-      orderId
-    );
+    await getOrder(orderId);
 
 
   if (
     !order ||
     order.status !== 'approved'
   ) {
-
     return order;
-
   }
 
 
@@ -1204,14 +973,8 @@ async function fulfillOrder(
 
 
   let current =
-    await countTickets(
-      orderId
-    );
+    await countTickets(orderId);
 
-
-  /*
-   * GERA OS INGRESSOS
-   */
 
   if (current < expected) {
 
@@ -1219,7 +982,8 @@ async function fulfillOrder(
 
 
     for (
-      const item of order.items
+      const item
+      of order.items
     ) {
 
       for (
@@ -1229,9 +993,7 @@ async function fulfillOrder(
       ) {
 
         flat.push(item);
-
       }
-
     }
 
 
@@ -1241,7 +1003,7 @@ async function fulfillOrder(
       i++
     ) {
 
-      const ticket =
+      const t =
         await buildTicket(
           order,
           flat[i]
@@ -1253,106 +1015,43 @@ async function fulfillOrder(
         await db(
           `
             INSERT INTO tickets(
-
               ticket_id,
-
               order_id,
-
               token_hash,
-
               batch_id,
-
               batch_name,
-
               unit_price,
-
               buyer_name,
-
               buyer_email,
-
               qr_base64
-
             )
-
             VALUES(
               $1,$2,$3,$4,$5,$6,$7,$8,$9
             )
           `,
           [
-
-            ticket.ticketId,
-
+            t.ticketId,
             orderId,
-
-            ticket.tokenHash,
-
-            ticket.batchId,
-
-            ticket.batchName,
-
-            ticket.unitPrice,
-
-            ticket.buyerName,
-
-            ticket.buyerEmail,
-
-            ticket.qrBase64
-
+            t.tokenHash,
+            t.batchId,
+            t.batchName,
+            t.unitPrice,
+            t.buyerName,
+            t.buyerEmail,
+            t.qrBase64
           ]
         );
 
+      } catch (e) {
 
-        /*
-         * DIAGNÓSTICO:
-         * verificamos imediatamente
-         * se o token que acabamos
-         * de salvar corresponde
-         * ao hash salvo.
-         */
-
-        const check =
-          await db(
-            `
-              SELECT ticket_id
-              FROM tickets
-              WHERE token_hash=$1
-            `,
-            [
-              ticket.tokenHash
-            ]
-          );
-
-
-        if (
-          !check.rows.length
-        ) {
-
-          throw new Error(
-            'Falha interna: token criado mas não encontrado imediatamente após gravação.'
-          );
-
+        if (e.code !== '23505') {
+          throw e;
         }
 
+        i--;
 
+        continue;
       }
-
-      catch (e) {
-
-        if (
-          e.code === '23505'
-        ) {
-
-          i--;
-
-          continue;
-
-        }
-
-
-        throw e;
-
-      }
-
     }
 
 
@@ -1360,62 +1059,19 @@ async function fulfillOrder(
       await countTickets(
         orderId
       );
-
   }
 
 
-  /*
-   * ENVIO DO EMAIL
-   */
+  /* ======================================================
+     RESEND
+     ====================================================== */
 
   if (
     current === expected &&
     !order.emailSentAt
   ) {
 
-    try {
-
-      const tickets =
-        await getTickets(
-          orderId
-        );
-
-
-      await sendTicketEmail(
-        order,
-        tickets,
-        false
-      );
-
-
-      await db(
-        `
-          UPDATE orders
-          SET
-            email_sent_at=NOW(),
-            email_error=NULL,
-            updated_at=NOW()
-          WHERE order_id=$1
-        `,
-        [
-          orderId
-        ]
-      );
-
-    }
-
-    catch (emailError) {
-
-      console.error(
-        'ERRO RESEND:',
-        emailError
-      );
-
-
-      const errorText =
-        emailError.message ||
-        'Erro desconhecido no Resend.';
-
+    if (!mailReady()) {
 
       await db(
         `
@@ -1426,24 +1082,183 @@ async function fulfillOrder(
           WHERE order_id=$2
         `,
         [
-          errorText.substring(
-            0,
-            2000
-          ),
-
+          'Resend não está configurado corretamente.',
           orderId
         ]
       );
 
-    }
+    } else {
 
+      try {
+
+        const tickets =
+          await getTickets(
+            orderId
+          );
+
+
+        const attachments =
+          tickets.map(t => ({
+
+            filename:
+              `${t.ticket_id}.png`,
+
+            content:
+              Buffer.from(
+                t.qr_base64,
+                'base64'
+              ),
+
+            contentType:
+              'image/png',
+
+            contentId:
+              `qr-${t.ticket_id}`
+
+          }));
+
+
+        const result =
+          await resend.emails.send({
+
+            from:
+              EMAIL_FROM,
+
+            to:
+              order.buyer.email,
+
+            subject:
+              `Seu ingresso — ${EVENT_NAME}`,
+
+            text:
+              `Pagamento aprovado. Seus ${tickets.length} ingresso(s) para ${EVENT_NAME} estão neste e-mail.`,
+
+            html:
+              `
+                <div style="
+                  background:#070707;
+                  padding:28px 12px;
+                  font-family:Arial,sans-serif
+                ">
+
+                  <div style="
+                    max-width:620px;
+                    margin:auto;
+                    color:#fff;
+                    text-align:center
+                  ">
+
+                    <div style="
+                      font-size:12px;
+                      letter-spacing:3px;
+                      color:#ff3a4a;
+                      font-weight:800
+                    ">
+                      PAGAMENTO APROVADO
+                    </div>
+
+
+                    <h1>
+                      ${esc(EVENT_NAME)}
+                    </h1>
+
+
+                    <p style="color:#bbb">
+                      Olá,
+                      ${esc(order.buyer.name)}.
+                      Guarde este e-mail e apresente
+                      o QR Code correspondente na entrada.
+                    </p>
+
+
+                    ${tickets
+                      .map(ticketHtml)
+                      .join('')}
+
+
+                    <p style="
+                      color:#777;
+                      font-size:11px
+                    ">
+                      Pedido:
+                      ${esc(order.orderId)}
+                    </p>
+
+                  </div>
+
+                </div>
+              `,
+
+            attachments
+          });
+
+
+        if (result.error) {
+
+          throw new Error(
+            result.error.message ||
+            'Erro ao enviar e-mail pelo Resend.'
+          );
+        }
+
+
+        await db(
+          `
+            UPDATE orders
+            SET
+              email_sent_at=NOW(),
+              email_error=NULL,
+              updated_at=NOW()
+            WHERE order_id=$1
+          `,
+          [orderId]
+        );
+
+
+      } catch (emailError) {
+
+        console.error(
+          'ERRO RESEND:',
+          emailError
+        );
+
+
+        const errorText =
+          [
+            emailError.message,
+
+            emailError.code
+              ? `code=${emailError.code}`
+              : null
+
+          ]
+          .filter(Boolean)
+          .join(' | ');
+
+
+        await db(
+          `
+            UPDATE orders
+            SET
+              email_error=$1,
+              updated_at=NOW()
+            WHERE order_id=$2
+          `,
+          [
+            errorText.substring(
+              0,
+              2000
+            ),
+
+            orderId
+          ]
+        );
+      }
+    }
   }
 
 
-  return getOrder(
-    orderId
-  );
-
+  return await getOrder(orderId);
 }
 
 
@@ -1455,52 +1270,33 @@ const locks =
   new Map();
 
 
-function fulfillLocked(
-  orderId
-) {
+function fulfillLocked(id) {
 
-  if (
-    locks.has(orderId)
-  ) {
-
-    return locks.get(
-      orderId
-    );
-
+  if (locks.has(id)) {
+    return locks.get(id);
   }
 
 
-  const promise =
-    fulfillOrder(
-      orderId
-    )
-      .catch(error => {
+  const p =
+    fulfillOrder(id)
+      .catch(e => {
 
         console.error(
           'Emissão:',
-          error
+          e
         );
 
-        throw error;
+        throw e;
 
       })
-      .finally(() => {
-
-        locks.delete(
-          orderId
-        );
-
-      });
+      .finally(() =>
+        locks.delete(id)
+      );
 
 
-  locks.set(
-    orderId,
-    promise
-  );
+  locks.set(id, p);
 
-
-  return promise;
-
+  return p;
 }
 
 
@@ -1519,7 +1315,6 @@ app.get(
         await db(
           'SELECT 1'
         );
-
       }
 
 
@@ -1530,23 +1325,15 @@ app.get(
         db:
           Boolean(pool),
 
-        resend:
-          Boolean(resend),
-
-        emailFrom:
-          Boolean(EMAIL_FROM),
-
-        publicBaseUrl:
-          Boolean(PUBLIC_BASE_URL),
-
         event:
-          EVENT_NAME
+          EVENT_NAME,
 
+        emailProvider:
+          'Resend'
       });
 
-    }
 
-    catch (e) {
+    } catch (e) {
 
       res.status(503).json({
 
@@ -1554,17 +1341,14 @@ app.get(
 
         error:
           e.message
-
       });
-
     }
-
   }
 );
 
 
 /* ========================================================
-   PIX
+   CRIAR PIX
    ======================================================== */
 
 app.post(
@@ -1576,8 +1360,7 @@ app.post(
       const {
         buyer,
         items
-      } =
-        req.body || {};
+      } = req.body || {};
 
 
       const name =
@@ -1595,10 +1378,8 @@ app.post(
       const phone =
         String(
           buyer?.phone || ''
-        ).replace(
-          /\D/g,
-          ''
-        );
+        )
+        .replace(/\D/g, '');
 
 
       const cpf =
@@ -1617,23 +1398,17 @@ app.post(
 
           error:
             'Informe nome, e-mail e CPF válidos.'
-
         });
-
       }
 
 
-      if (
-        phone.length !== 11
-      ) {
+      if (phone.length !== 11) {
 
         return res.status(400).json({
 
           error:
             'Informe um telefone válido.'
-
         });
-
       }
 
 
@@ -1665,8 +1440,8 @@ app.post(
         description:
           `${EVENT_NAME} - ${normalized
             .map(
-              item =>
-                `${item.quantity}x ${item.name}`
+              i =>
+                `${i.quantity}x ${i.name}`
             )
             .join(', ')}`,
 
@@ -1691,11 +1466,8 @@ app.post(
 
             number:
               cpf
-
           }
-
         }
-
       };
 
 
@@ -1703,7 +1475,6 @@ app.post(
 
         body.notification_url =
           `${PUBLIC_BASE_URL}/api/mercadopago/webhook`;
-
       }
 
 
@@ -1712,71 +1483,55 @@ app.post(
           'https://api.mercadopago.com/v1/payments',
           {
 
-            method:
-              'POST',
+            method: 'POST',
 
             headers: {
 
               'X-Idempotency-Key':
                 crypto.randomUUID()
-
             },
 
             body:
               JSON.stringify(body)
-
           }
         );
 
 
-      const transaction =
+      const tx =
         payment
           .point_of_interaction
           ?.transaction_data;
 
 
       if (
-        !transaction?.qr_code ||
-        !transaction?.qr_code_base64
+        !tx?.qr_code ||
+        !tx?.qr_code_base64
       ) {
 
         throw new Error(
           'Mercado Pago não retornou o QR Code PIX.'
         );
-
       }
 
 
       await db(
         `
           INSERT INTO orders(
-
             order_id,
-
             payment_id,
-
             status,
-
             total,
-
             buyer_name,
-
             buyer_email,
-
             buyer_cpf,
-
             buyer_phone,
-
             items
-
           )
-
           VALUES(
             $1,$2,$3,$4,$5,$6,$7,$8,$9
           )
         `,
         [
-
           orderId,
 
           String(
@@ -1799,7 +1554,6 @@ app.post(
           JSON.stringify(
             normalized
           )
-
         ]
       );
 
@@ -1815,16 +1569,14 @@ app.post(
           payment.status,
 
         qrCode:
-          transaction.qr_code,
+          tx.qr_code,
 
         qrCodeBase64:
-          transaction.qr_code_base64
-
+          tx.qr_code_base64
       });
 
-    }
 
-    catch (e) {
+    } catch (e) {
 
       console.error(e);
 
@@ -1834,17 +1586,14 @@ app.post(
         error:
           e.message ||
           'Não foi possível gerar o PIX.'
-
       });
-
     }
-
   }
 );
 
 
 /* ========================================================
-   STATUS DO PAGAMENTO
+   STATUS PAGAMENTO
    ======================================================== */
 
 app.get(
@@ -1865,9 +1614,7 @@ app.get(
 
           error:
             'Compra não encontrada.'
-
         });
-
       }
 
 
@@ -1888,23 +1635,19 @@ app.get(
           WHERE order_id=$2
         `,
         [
-
           payment.status ||
             order.status,
 
           order.orderId
-
         ]
       );
 
 
       const finalOrder =
         payment.status === 'approved'
-
           ? await fulfillLocked(
               order.orderId
             )
-
           : await getOrder(
               order.orderId
             );
@@ -1938,29 +1681,18 @@ app.get(
         emailError:
           finalOrder.emailError ||
           null
-
       });
 
-    }
 
-    catch (e) {
-
-      console.error(
-        'Status pagamento:',
-        e
-      );
-
+    } catch (e) {
 
       res.status(500).json({
 
         error:
           e.message ||
           'Não foi possível consultar o pagamento.'
-
       });
-
     }
-
   }
 );
 
@@ -1984,7 +1716,8 @@ app.post(
         req.body?.id;
 
 
-      if (!paymentId) return;
+      if (!paymentId)
+        return;
 
 
       const payment =
@@ -1999,49 +1732,43 @@ app.post(
         payment.external_reference;
 
 
-      if (!orderId) return;
+      if (orderId) {
 
+        await db(
+          `
+            UPDATE orders
+            SET
+              status=$1,
+              updated_at=NOW()
+            WHERE order_id=$2
+          `,
+          [
+            payment.status,
 
-      await db(
-        `
-          UPDATE orders
-          SET
-            status=$1,
-            updated_at=NOW()
-          WHERE order_id=$2
-        `,
-        [
-
-          payment.status,
-
-          orderId
-
-        ]
-      );
-
-
-      if (
-        payment.status ===
-        'approved'
-      ) {
-
-        await fulfillLocked(
-          orderId
+            orderId
+          ]
         );
 
+
+        if (
+          payment.status ===
+          'approved'
+        ) {
+
+          await fulfillLocked(
+            orderId
+          );
+        }
       }
 
-    }
 
-    catch (e) {
+    } catch (e) {
 
       console.error(
         'Webhook Mercado Pago:',
         e
       );
-
     }
-
   }
 );
 
@@ -2057,51 +1784,13 @@ app.post(
 
     try {
 
-      let token =
+      const rawToken =
         String(
           req.body?.token || ''
         ).trim();
 
 
-      /*
-       * Se alguém mandar a URL completa
-       * em vez do token, extraímos o ticket.
-       */
-
-      try {
-
-        if (
-          token.startsWith('http://') ||
-          token.startsWith('https://')
-        ) {
-
-          const url =
-            new URL(token);
-
-
-          const ticket =
-            url.searchParams.get(
-              'ticket'
-            );
-
-
-          if (ticket) {
-
-            token =
-              decodeURIComponent(
-                ticket
-              ).trim();
-
-          }
-
-        }
-
-      }
-
-      catch {}
-
-
-      if (!token) {
+      if (!rawToken) {
 
         return res.status(400).json({
 
@@ -2109,29 +1798,38 @@ app.post(
 
           error:
             'QR Code inválido.'
-
         });
-
       }
 
 
-      console.log(
-        'Validação recebida:',
-        'tokenLength=',
-        token.length
-      );
+      /*
+       * CORREÇÃO PRINCIPAL
+       *
+       * O sistema agora aceita:
+       *
+       * 1. Token secreto do QR
+       *
+       * 2. Código BMD2-XXXXXXXXXX
+       */
 
 
-      const tokenHash =
+      const token =
+        rawToken;
+
+
+      let r;
+
+
+      /* ==================================================
+         PRIMEIRO:
+         tentar como token secreto
+         ================================================== */
+
+      const h =
         hashToken(token);
 
 
-      /*
-       * PRIMEIRO TENTAMOS
-       * ENCONTRAR O INGRESSO.
-       */
-
-      const result =
+      r =
         await db(
           `
             SELECT
@@ -2142,39 +1840,54 @@ app.post(
               ON o.order_id=t.order_id
             WHERE t.token_hash=$1
           `,
-          [
-            tokenHash
-          ]
+          [h]
         );
 
 
-      const ticket =
-        result.rows[0];
-
-
       /*
-       * DIAGNÓSTICO:
-       * se não encontrou, mostramos
-       * apenas informações seguras
-       * no LOG do Render.
+       * SE NÃO ENCONTROU,
+       * tenta pelo ticket_id.
+       *
+       * Isso corrige o seu erro:
+       *
+       * tokenLength = 15
        */
 
-      if (!ticket) {
+      if (!r.rows[0]) {
 
-        console.error(
+        r =
+          await db(
+            `
+              SELECT
+                t.*,
+                o.status AS order_status
+              FROM tickets t
+              JOIN orders o
+                ON o.order_id=t.order_id
+              WHERE UPPER(t.ticket_id)=UPPER($1)
+            `,
+            [token]
+          );
+      }
+
+
+      const t =
+        r.rows[0];
+
+
+      if (!t) {
+
+        console.log(
           'INGRESSO NÃO ENCONTRADO:',
           {
             tokenLength:
               token.length,
 
             hashLength:
-              tokenHash.length,
+              h.length,
 
             hashPrefix:
-              tokenHash.substring(
-                0,
-                10
-              )
+              h.substring(0, 10)
           }
         );
 
@@ -2185,14 +1898,27 @@ app.post(
 
           error:
             'Ingresso não encontrado.'
-
         });
-
       }
 
 
+      console.log(
+        'INGRESSO LOCALIZADO:',
+        {
+          ticketId:
+            t.ticket_id,
+
+          orderId:
+            t.order_id,
+
+          status:
+            t.order_status
+        }
+      );
+
+
       if (
-        ticket.order_status !==
+        t.order_status !==
         'approved'
       ) {
 
@@ -2202,15 +1928,11 @@ app.post(
 
           error:
             'Pagamento não aprovado.'
-
         });
-
       }
 
 
-      if (
-        ticket.used_at
-      ) {
+      if (t.used_at) {
 
         return res.status(409).json({
 
@@ -2224,27 +1946,24 @@ app.post(
           ticket: {
 
             ticketId:
-              ticket.ticket_id,
+              t.ticket_id,
 
             batchName:
-              ticket.batch_name,
+              t.batch_name,
 
             buyerName:
-              ticket.buyer_name,
+              t.buyer_name,
 
             usedAt:
-              ticket.used_at
-
+              t.used_at
           }
-
         });
-
       }
 
 
       /*
        * MARCA COMO UTILIZADO
-       * SOMENTE SE AINDA NÃO FOI USADO.
+       * SOMENTE UMA VEZ
        */
 
       const used =
@@ -2256,9 +1975,7 @@ app.post(
               AND used_at IS NULL
             RETURNING used_at
           `,
-          [
-            ticket.ticket_id
-          ]
+          [t.ticket_id]
         );
 
 
@@ -2272,9 +1989,7 @@ app.post(
 
           error:
             'Este ingresso já foi utilizado.'
-
         });
-
       }
 
 
@@ -2290,38 +2005,34 @@ app.post(
         ticket: {
 
           ticketId:
-            ticket.ticket_id,
+            t.ticket_id,
 
           batchName:
-            ticket.batch_name,
+            t.batch_name,
 
           buyerName:
-            ticket.buyer_name
-
+            t.buyer_name
         }
-
       });
 
-    }
 
-    catch (e) {
+    } catch (e) {
 
       console.error(
-        'Validação:',
+        'Erro ao validar ingresso:',
         e
       );
 
 
       res.status(500).json({
 
+        valid: false,
+
         error:
           e.message ||
           'Não foi possível validar o ingresso.'
-
       });
-
     }
-
   }
 );
 
@@ -2349,9 +2060,7 @@ app.post(
 
           error:
             'Compra não encontrada.'
-
         });
-
       }
 
 
@@ -2364,13 +2073,11 @@ app.post(
 
           error:
             'Pagamento ainda não aprovado.'
-
         });
-
       }
 
 
-      let tickets =
+      const tickets =
         await getTickets(
           order.orderId
         );
@@ -2384,27 +2091,88 @@ app.post(
         await fulfillLocked(
           order.orderId
         );
-
-
-        tickets =
-          await getTickets(
-            order.orderId
-          );
-
       }
 
 
-      const freshOrder =
+      const fresh =
         await getOrder(
           order.orderId
         );
 
 
-      await sendTicketEmail(
-        freshOrder,
-        tickets,
-        true
-      );
+      const ts =
+        await getTickets(
+          order.orderId
+        );
+
+
+      if (!mailReady()) {
+
+        throw new Error(
+          'Resend não configurado.'
+        );
+      }
+
+
+      const result =
+        await resend.emails.send({
+
+          from:
+            EMAIL_FROM,
+
+          to:
+            fresh.buyer.email,
+
+          subject:
+            `Reenvio — ${EVENT_NAME}`,
+
+          text:
+            `Seus ingressos para ${EVENT_NAME}.`,
+
+          html:
+            `
+              <div style="
+                background:#070707;
+                padding:28px 12px;
+                font-family:Arial,sans-serif
+              ">
+
+                ${ts
+                  .map(ticketHtml)
+                  .join('')}
+
+              </div>
+            `,
+
+          attachments:
+            ts.map(t => ({
+
+              filename:
+                `${t.ticket_id}.png`,
+
+              content:
+                Buffer.from(
+                  t.qr_base64,
+                  'base64'
+                ),
+
+              contentType:
+                'image/png',
+
+              contentId:
+                `qr-${t.ticket_id}`
+
+            }))
+        });
+
+
+      if (result.error) {
+
+        throw new Error(
+          result.error.message ||
+          'Erro no Resend.'
+        );
+      }
 
 
       await db(
@@ -2416,9 +2184,7 @@ app.post(
             updated_at=NOW()
           WHERE order_id=$1
         `,
-        [
-          order.orderId
-        ]
+        [order.orderId]
       );
 
 
@@ -2428,29 +2194,18 @@ app.post(
 
         message:
           'Ingressos reenviados.'
-
       });
 
-    }
 
-    catch (e) {
-
-      console.error(
-        'Reenvio:',
-        e
-      );
-
+    } catch (e) {
 
       res.status(500).json({
 
         error:
           e.message ||
           'Não foi possível reenviar os ingressos.'
-
       });
-
     }
-
   }
 );
 
@@ -2466,7 +2221,7 @@ app.get(
 
     try {
 
-      const approved =
+      const a =
         await db(
           `
             SELECT
@@ -2477,16 +2232,16 @@ app.get(
         );
 
 
-      const tickets =
+      const s =
         await db(
           `
             SELECT
               COUNT(*)::int AS n,
 
               COUNT(*)
-              FILTER(
-                WHERE used_at IS NOT NULL
-              )::int AS used
+                FILTER(
+                  WHERE used_at IS NOT NULL
+                )::int AS used
 
             FROM tickets
           `
@@ -2494,17 +2249,17 @@ app.get(
 
 
       const sold =
-        tickets.rows[0].n;
+        s.rows[0].n;
 
 
       const used =
-        tickets.rows[0].used;
+        s.rows[0].used;
 
 
       res.json({
 
         approvedOrders:
-          approved.rows[0].n,
+          a.rows[0].n,
 
         soldTickets:
           sold,
@@ -2517,22 +2272,17 @@ app.get(
             0,
             sold - used
           )
-
       });
 
-    }
 
-    catch (e) {
+    } catch (e) {
 
       res.status(500).json({
 
         error:
           e.message
-
       });
-
     }
-
   }
 );
 
@@ -2570,10 +2320,8 @@ app.post(
         String(
           body.phone ||
           '61999999999'
-        ).replace(
-          /\D/g,
-          ''
-        );
+        )
+        .replace(/\D/g, '');
 
 
       const cpf =
@@ -2596,9 +2344,7 @@ app.post(
 
           error:
             'Informe o e-mail que receberá o ingresso de teste.'
-
         });
-
       }
 
 
@@ -2608,23 +2354,17 @@ app.post(
 
           error:
             'Tipo de ingresso de teste inválido.'
-
         });
-
       }
 
 
-      if (
-        cpf.length !== 11
-      ) {
+      if (cpf.length !== 11) {
 
         return res.status(400).json({
 
           error:
             'CPF de teste inválido.'
-
         });
-
       }
 
 
@@ -2649,44 +2389,25 @@ app.post(
 
         unit_price:
           batches[batchId].price
-
       };
 
 
       await db(
         `
           INSERT INTO orders(
-
             order_id,
-
             payment_id,
-
             status,
-
             total,
-
             buyer_name,
-
             buyer_email,
-
             buyer_cpf,
-
             buyer_phone,
-
             items
-
           )
-
           VALUES(
-            $1,
-            $2,
-            'approved',
-            $3,
-            $4,
-            $5,
-            $6,
-            $7,
-            $8
+            $1,$2,'approved',
+            $3,$4,$5,$6,$7,$8
           )
         `,
         [
@@ -2705,10 +2426,7 @@ app.post(
 
           phone,
 
-          JSON.stringify([
-            item
-          ])
-
+          JSON.stringify([item])
         ]
       );
 
@@ -2746,26 +2464,21 @@ app.post(
           null,
 
         tickets:
-          tickets.map(
-            ticket => ({
+          tickets.map(t => ({
 
-              ticketId:
-                ticket.ticket_id,
+            ticketId:
+              t.ticket_id,
 
-              batchName:
-                ticket.batch_name,
+            batchName:
+              t.batch_name,
 
-              usedAt:
-                ticket.used_at
-
-            })
-          )
-
+            usedAt:
+              t.used_at
+          }))
       });
 
-    }
 
-    catch (e) {
+    } catch (e) {
 
       console.error(
         'Compra de teste:',
@@ -2778,11 +2491,8 @@ app.post(
         error:
           e.message ||
           'Não foi possível criar a compra de teste.'
-
       });
-
     }
-
   }
 );
 
@@ -2814,12 +2524,10 @@ app.delete(
 
         deleted:
           result.rowCount
-
       });
 
-    }
 
-    catch (e) {
+    } catch (e) {
 
       console.error(
         'Excluir testes:',
@@ -2832,11 +2540,8 @@ app.delete(
         error:
           e.message ||
           'Não foi possível excluir os testes.'
-
       });
-
     }
-
   }
 );
 
@@ -2855,7 +2560,6 @@ app.get(
         'index.html'
       )
     );
-
   }
 );
 
@@ -2865,7 +2569,6 @@ app.get(
    ======================================================== */
 
 initDb()
-
   .then(() => {
 
     app.listen(
@@ -2874,29 +2577,20 @@ initDb()
       () => {
 
         console.log(
-          `${EVENT_NAME} rodando na porta ${PORT}`
+          `${EVENT_NAME} em http://0.0.0.0:${PORT}`
         );
 
         console.log(
-          'Resend:',
-          Boolean(resend)
+          'E-mail: Resend'
         );
 
         console.log(
-          'EMAIL_FROM:',
-          Boolean(EMAIL_FROM)
+          `EMAIL_FROM: ${EMAIL_FROM}`
         );
-
-        console.log(
-          'PUBLIC_BASE_URL:',
-          PUBLIC_BASE_URL || '(não configurado)'
-        );
-
       }
     );
 
   })
-
   .catch(e => {
 
     console.error(
@@ -2905,5 +2599,4 @@ initDb()
     );
 
     process.exit(1);
-
   });
