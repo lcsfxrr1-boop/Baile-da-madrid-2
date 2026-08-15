@@ -1,131 +1,4 @@
-require('dotenv').config();
-
-const express = require('express');
-const path = require('path');
-const crypto = require('crypto');
-const QRCode = require('qrcode');
-const { Resend } = require('resend');
-const { Pool } = require('pg');
-
-const app = express();
-
-app.use(express.json({ limit: '100kb' }));
-app.use(express.static(path.join(__dirname)));
-
-const PORT = process.env.PORT || 3000;
-
-const ACCESS_TOKEN = process.env.MP_ACCESS_TOKEN;
-
-const PUBLIC_KEY = process.env.MP_PUBLIC_KEY || '';
-
-const PUBLIC_BASE_URL =
-  (process.env.PUBLIC_BASE_URL || '').replace(/\/$/, '');
-
-const ADMIN_TOKEN =
-  process.env.ADMIN_TOKEN || '';
-
-const RESEND_API_KEY =
-  process.env.RESEND_API_KEY || '';
-
-const EMAIL_FROM =
-  process.env.EMAIL_FROM ||
-  'onboarding@resend.dev';
-
-const EVENT_NAME =
-  'Baile da Madrid 2.0';
-
-
-/* ========================================================
-   RESEND
-   ======================================================== */
-
-const resend =
-  RESEND_API_KEY
-    ? new Resend(RESEND_API_KEY)
-    : null;
-
-
-/* ========================================================
-   LOTES
-   ======================================================== */
-
-const batches = {
-  pre: {
-    name: 'Pré-Venda',
-    price: 10
-  },
-
-  lote1: {
-    name: '1º Lote',
-    price: 20
-  },
-
-  lote2: {
-    name: '2º Lote',
-    price: 25
-  },
-
-  lote3: {
-    name: '3º Lote',
-    price: 30
-  },
-
-  vip: {
-    name: 'Área VIP',
-    price: 70
-  }
-};
-
-
-/* ========================================================
-   BANCO
-   ======================================================== */
-
-if (!process.env.DATABASE_URL) {
-  console.warn(
-    'DATABASE_URL não configurado.'
-  );
-}
-
-const pool =
-  process.env.DATABASE_URL
-    ? new Pool({
-        connectionString:
-          process.env.DATABASE_URL,
-
-        ssl: {
-          rejectUnauthorized: false
-        },
-
-        max: 5
-      })
-    : null;
-
-
-async function db(query, params = []) {
-
-  if (!pool) {
-    throw new Error(
-      'DATABASE_URL não configurado.'
-    );
-  }
-
-  return pool.query(
-    query,
-    params
-  );
-}
-
-
-/* ========================================================
-   INICIALIZAR BANCO
-   ======================================================== */
-
-async function initDb() {
-
-  if (!pool) return;
-
-  await db(`
+require('dotenv').config();const express=require('express');const path=require('path');const crypto=require('crypto');const QRCode=require('qrcode');const{Resend}=require('resend');const{Pool}=require('pg');const app=express();app.use(express.json({limit: '100kb'}));app.use(express.static(path.join(__dirname)));const PORT=process.env.PORT||3000;const ACCESS_TOKEN=process.env.MP_ACCESS_TOKEN;const PUBLIC_KEY=process.env.MP_PUBLIC_KEY|| '';const PUBLIC_BASE_URL=(process.env.PUBLIC_BASE_URL|| '').replace(/\/$/, '');const ADMIN_TOKEN=process.env.ADMIN_TOKEN|| '';const RESEND_API_KEY=process.env.RESEND_API_KEY|| '';const EMAIL_FROM=process.env.EMAIL_FROM|| 'onboarding@resend.dev';const EVENT_NAME= 'Baile da Madrid 2.0';const resend=RESEND_API_KEY?new Resend(RESEND_API_KEY):null;const batches={pre:{name: 'Pré-Venda',price:10},lote1:{name: '1º Lote',price:20},lote2:{name: '2º Lote',price:25},lote3:{name: '3º Lote',price:30},vip:{name: 'Área VIP',price:70}};if(!process.env.DATABASE_URL){console.warn( 'DATABASE_URL não configurado.');}const pool=process.env.DATABASE_URL?new Pool({connectionString:process.env.DATABASE_URL,ssl:{rejectUnauthorized:false},max:5}):null;async function db(query,params=[]){if(!pool){throw new Error( 'DATABASE_URL não configurado.');}return pool.query(query,params);}async function initDb(){if(!pool)return;await db(`
     CREATE TABLE IF NOT EXISTS orders(
 
       order_id TEXT PRIMARY KEY,
@@ -158,10 +31,7 @@ async function initDb() {
 
       email_error TEXT
     )
-  `);
-
-
-  await db(`
+  `);await db(`
     CREATE TABLE IF NOT EXISTS tickets(
 
       ticket_id TEXT PRIMARY KEY,
@@ -190,293 +60,22 @@ async function initDb() {
 
       used_at TIMESTAMPTZ
     )
-  `);
-
-
-  await db(`
+  `);await db(`
     CREATE INDEX IF NOT EXISTS
     idx_tickets_token_hash
     ON tickets(token_hash)
-  `);
-
-
-  await db(`
+  `);await db(`
     CREATE INDEX IF NOT EXISTS
     idx_tickets_order_id
     ON tickets(order_id)
-  `);
-
-
-  await db(`
+  `);await db(`
     CREATE INDEX IF NOT EXISTS
     idx_tickets_ticket_id
     ON tickets(ticket_id)
-  `);
-}
-
-
-/* ========================================================
-   UTILITÁRIOS
-   ======================================================== */
-
-function cleanCPF(v) {
-
-  return String(v || '')
-    .replace(/\D/g, '');
-}
-
-
-function splitName(name) {
-
-  const p =
-    String(name || '')
-      .trim()
-      .split(/\s+/)
-      .filter(Boolean);
-
-  return {
-
-    first_name:
-      p.shift() || 'Cliente',
-
-    last_name:
-      p.join(' ') ||
-      'Baile Madrid'
-  };
-}
-
-
-function calculateItems(items) {
-
-  if (
-    !Array.isArray(items) ||
-    !items.length
-  ) {
-    throw new Error(
-      'Nenhum ingresso selecionado.'
-    );
-  }
-
-  let total = 0;
-
-  const normalized = [];
-
-
-  for (const item of items) {
-
-    const batch =
-      batches[item.id];
-
-    const quantity =
-      Number(item.quantity);
-
-
-    if (
-      !batch ||
-      !Number.isInteger(quantity) ||
-      quantity < 1 ||
-      quantity > 10
-    ) {
-      throw new Error(
-        'Ingresso ou quantidade inválida.'
-      );
-    }
-
-
-    total +=
-      batch.price * quantity;
-
-
-    normalized.push({
-
-      id: item.id,
-
-      name: batch.name,
-
-      quantity,
-
-      unit_price:
-        batch.price
-    });
-  }
-
-
-  if (
-    normalized.reduce(
-      (s, i) =>
-        s + i.quantity,
-      0
-    ) > 10
-  ) {
-
-    throw new Error(
-      'Limite máximo de 10 ingressos por compra.'
-    );
-  }
-
-
-  return {
-    normalized,
-    total
-  };
-}
-
-
-function totalTicketCount(order) {
-
-  return (order.items || [])
-    .reduce(
-      (sum, item) =>
-        sum +
-        Number(
-          item.quantity || 0
-        ),
-      0
-    );
-}
-
-
-function makeTicketCode() {
-
-  return `BMD2-${crypto
+  `);}function cleanCPF(v){return String(v|| '').replace(/\D/g, '');}function splitName(name){const p=String(name|| '').trim().split(/\s+/).filter(Boolean);return{first_name:p.shift()|| 'Cliente',last_name:p.join(' ')|| 'Baile Madrid'};}function calculateItems(items){if(!Array.isArray(items)||!items.length){throw new Error( 'Nenhum ingresso selecionado.');}let total=0;const normalized=[];for(const item of items){const batch=batches[item.id];const quantity=Number(item.quantity);if(!batch||!Number.isInteger(quantity)||quantity<1||quantity>10){throw new Error( 'Ingresso ou quantidade inválida.');}total+=batch.price*quantity;normalized.push({id:item.id,name:batch.name,quantity,unit_price:batch.price});}if(normalized.reduce((s,i)=>s+i.quantity,0)>10){throw new Error( 'Limite máximo de 10 ingressos por compra.');}return{normalized,total};}function totalTicketCount(order){return(order.items||[]).reduce((sum,item)=>sum+Number(item.quantity||0),0);}function makeTicketCode(){return `BMD2-${crypto
     .randomBytes(5)
     .toString('hex')
-    .toUpperCase()}`;
-}
-
-
-function makeTicketToken() {
-
-  return crypto.randomBytes(32)
-    .toString('base64url');
-}
-
-
-function hashToken(token) {
-
-  return crypto
-    .createHash('sha256')
-    .update(token)
-    .digest('hex');
-}
-
-
-function requireAdmin(req, res, next) {
-
-  const supplied =
-    req.get('x-admin-token') ||
-    req.body?.adminToken ||
-    req.query?.adminToken ||
-    '';
-
-
-  if (!ADMIN_TOKEN) {
-
-    return res.status(503).json({
-
-      error:
-        'ADMIN_TOKEN não configurado no servidor.'
-    });
-  }
-
-
-  if (supplied !== ADMIN_TOKEN) {
-
-    return res.status(401).json({
-
-      error:
-        'Acesso não autorizado.'
-    });
-  }
-
-
-  next();
-}
-
-
-/* ========================================================
-   RESEND
-   ======================================================== */
-
-function mailReady() {
-
-  return Boolean(
-    resend &&
-    RESEND_API_KEY &&
-    EMAIL_FROM
-  );
-}
-
-
-/* ========================================================
-   TESTE RESEND
-   ======================================================== */
-
-app.get(
-  '/api/admin/test-smtp',
-  requireAdmin,
-  async (req, res) => {
-
-    try {
-
-      if (!mailReady()) {
-
-        return res.status(500).json({
-
-          ok: false,
-
-          error:
-            'Resend não configurado. Verifique RESEND_API_KEY e EMAIL_FROM.'
-        });
-      }
-
-
-      /*
-       * O endpoint antigo se chama test-smtp
-       * para não precisar alterar seu painel.
-       *
-       * Aqui ele testa o Resend enviando
-       * um e-mail para o endereço informado.
-       */
-
-      const to =
-        String(
-          req.query.to ||
-          req.body?.to ||
-          ''
-        ).trim();
-
-
-      if (!to) {
-
-        return res.json({
-
-          ok: true,
-
-          provider: 'Resend',
-
-          message:
-            'Resend configurado corretamente. Informe ?to=EMAIL para realizar um envio de teste.',
-
-          from:
-            EMAIL_FROM
-        });
-      }
-
-
-      const result =
-        await resend.emails.send({
-
-          from:
-            EMAIL_FROM,
-
-          to,
-
-          subject:
-            'Teste de e-mail — Baile da Madrid 2.0',
-
-          html:
-            `
+    .toUpperCase()}`;}function makeTicketToken(){return crypto.randomBytes(32).toString('base64url');}function hashToken(token){return crypto.createHash('sha256').update(token).digest('hex');}function requireAdmin(req,res,next){const supplied=req.get('x-admin-token')||req.body?.adminToken||req.query?.adminToken|| '';if(!ADMIN_TOKEN){return res.status(503).json({error: 'ADMIN_TOKEN não configurado no servidor.'});}if(supplied!==ADMIN_TOKEN){return res.status(401).json({error: 'Acesso não autorizado.'});}next();}function mailReady(){return Boolean(resend&&RESEND_API_KEY&&EMAIL_FROM);}app.get( '/api/admin/test-smtp',requireAdmin,async(req,res)=>{try{if(!mailReady()){return res.status(500).json({ok:false,error: 'Resend não configurado. Verifique RESEND_API_KEY e EMAIL_FROM.'});}const to=String(req.query.to||req.body?.to|| '').trim();if(!to){return res.json({ok:true,provider: 'Resend',message: 'Resend configurado corretamente. Informe ?to=EMAIL para realizar um envio de teste.',from:EMAIL_FROM});}const result=await resend.emails.send({from:EMAIL_FROM,to,subject: 'Teste de e-mail — Baile da Madrid 2.0',html: `
               <div style="
                 font-family:Arial,sans-serif;
                 padding:30px
@@ -493,222 +92,7 @@ app.get(
                 </p>
 
               </div>
-            `
-        });
-
-
-      if (result.error) {
-
-        throw new Error(
-          result.error.message ||
-          'Erro ao enviar pelo Resend.'
-        );
-      }
-
-
-      res.json({
-
-        ok: true,
-
-        provider:
-          'Resend',
-
-        message:
-          'E-mail de teste enviado com sucesso.',
-
-        id:
-          result.data?.id || null,
-
-        from:
-          EMAIL_FROM,
-
-        to
-      });
-
-
-    } catch (e) {
-
-      console.error(
-        'Erro no teste Resend:',
-        e
-      );
-
-
-      res.status(500).json({
-
-        ok: false,
-
-        error:
-          e.message ||
-          'Falha no Resend.',
-
-        code:
-          e.code || null
-      });
-    }
-  }
-);
-
-
-/* ========================================================
-   MERCADO PAGO
-   ======================================================== */
-
-async function mpRequest(
-  url,
-  options = {}
-) {
-
-  if (!ACCESS_TOKEN) {
-
-    throw new Error(
-      'MP_ACCESS_TOKEN não configurado no servidor.'
-    );
-  }
-
-
-  const r =
-    await fetch(
-      url,
-      {
-        ...options,
-
-        headers: {
-
-          Authorization:
-            `Bearer ${ACCESS_TOKEN}`,
-
-          'Content-Type':
-            'application/json',
-
-          ...(options.headers || {})
-        }
-      }
-    );
-
-
-  const text =
-    await r.text();
-
-
-  let data;
-
-
-  try {
-
-    data =
-      JSON.parse(text);
-
-  } catch {
-
-    data = {
-      message: text
-    };
-  }
-
-
-  if (!r.ok) {
-
-    console.error(
-      'Mercado Pago:',
-      r.status,
-      data
-    );
-
-
-    throw new Error(
-      data.message ||
-      'Erro no Mercado Pago.'
-    );
-  }
-
-
-  return data;
-}
-
-
-/* ========================================================
-   INGRESSOS
-   ======================================================== */
-
-function ticketUrl(token) {
-
-  return (
-    `${PUBLIC_BASE_URL}` +
-    `/validar.html?ticket=` +
-    encodeURIComponent(token)
-  );
-}
-
-
-async function buildTicket(
-  order,
-  item
-) {
-
-  if (!PUBLIC_BASE_URL) {
-
-    throw new Error(
-      'PUBLIC_BASE_URL não configurado.'
-    );
-  }
-
-
-  const token =
-    makeTicketToken();
-
-
-  const ticketId =
-    makeTicketCode();
-
-
-  const qrDataUrl =
-    await QRCode.toDataURL(
-      ticketUrl(token),
-      {
-        errorCorrectionLevel:
-          'H',
-
-        margin: 2,
-
-        width: 360
-      }
-    );
-
-
-  return {
-
-    ticketId,
-
-    tokenHash:
-      hashToken(token),
-
-    batchId:
-      item.id,
-
-    batchName:
-      item.name,
-
-    unitPrice:
-      item.unit_price,
-
-    buyerName:
-      order.buyer.name,
-
-    buyerEmail:
-      order.buyer.email,
-
-    qrBase64:
-      qrDataUrl.split(',')[1]
-  };
-}
-
-
-function esc(v) {
-
-  return String(v ?? '')
-    .replace(
-      /[&<>"']/g,
+            `});if(result.error){throw new Error(result.error.message|| 'Erro ao enviar pelo Resend.');}res.json({ok:true,provider: 'Resend',message: 'E-mail de teste enviado com sucesso.',id:result.data?.id||null,from:EMAIL_FROM,to});}catch(e){console.error( 'Erro no teste Resend:',e);res.status(500).json({ok:false,error:e.message|| 'Falha no Resend.',code:e.code||null});}});async function mpRequest(url,options={}){if(!ACCESS_TOKEN){throw new Error( 'MP_ACCESS_TOKEN não configurado no servidor.');}const r=await fetch(url,{...options,headers:{Authorization: `Bearer ${ACCESS_TOKEN}`, 'Content-Type': 'application/json',...(options.headers||{})}});const text=await r.text();let data;try{data=JSON.parse(text);}catch{data={message:text};}if(!r.ok){console.error( 'Mercado Pago:',r.status,data);throw new Error(data.message|| 'Erro no Mercado Pago.');}return data;}function ticketUrl(token){return( `${PUBLIC_BASE_URL}`+ `/validar.html?ticket=`+encodeURIComponent(token));}async function buildTicket(order,item){if(!PUBLIC_BASE_URL){throw new Error( 'PUBLIC_BASE_URL não configurado.');}const token=makeTicketToken();const ticketId=makeTicketCode();const qrDataUrl=await QRCode.toDataURL(ticketUrl(token),{errorCorrectionLevel: 'H',margin:2,width:360});return{ticketId,tokenHash:hashToken(token),batchId:item.id,batchName:item.name,unitPrice:item.unit_price,buyerName:order.buyer.name,buyerEmail:order.buyer.email,qrBase64:qrDataUrl.split(',')[1]};}function esc(v){return String(v?? '').replace(/[&<>"']/g,
       c =>
         ({
           '&': '&amp;',
@@ -723,103 +107,65 @@ function esc(v) {
 
 function ticketHtml(t) {
 
+  const ticketId =
+    t.ticket_id ||
+    t.ticketId ||
+    '';
+
+  const batchName =
+    t.batch_name ||
+    t.batchName ||
+    '';
+
+  const buyerName =
+    t.buyer_name ||
+    t.buyerName ||
+    '';
+
+  const qrContentId =
+    `qr-${ticketId}`;
+
   return `
 
-    <div style="
-      max-width:520px;
-      margin:0 auto 24px;
-      background:#111;
-      border:1px solid #2b2b2b;
-      border-radius:18px;
-      padding:24px;
-      text-align:center;
-      color:#fff;
-      font-family:Arial,sans-serif
-    ">
+    <div style="max-width:520px;margin:0 auto 24px;background:#111;border:1px solid#2b2b2b;border-radius:18px;padding:24px;text-align:center;color:#fff;font-family:Arial,sans-serif ">
 
-      <div style="
-        font-size:12px;
-        letter-spacing:3px;
-        color:#ff3a4a;
-        font-weight:800
-      ">
+      <div style="font-size:12px;letter-spacing:3px;color:#ff3a4a;font-weight:800 ">
         INGRESSO DIGITAL
       </div>
 
-
-      <h2 style="
-        margin:8px 0 4px;
-        font-size:27px
-      ">
+      <h2 style="margin:8px 0 4px;font-size:27px ">
         ${esc(EVENT_NAME)}
       </h2>
 
-
-      <div style="
-        font-size:16px;
-        font-weight:700;
-        margin-bottom:18px
-      ">
-        ${esc(t.batchName)}
+      <div style="font-size:16px;font-weight:700;margin-bottom:18px ">
+        ${esc(batchName)}
       </div>
 
-
       <img
-        src="${esc(PUBLIC_BASE_URL)}/api/tickets/qr/${encodeURIComponent(t.ticketId)}.png"
+        src="cid:${esc(qrContentId)}"
         alt="QR Code do ingresso"
         width="250"
         height="250"
-        style="
-          display:block;
-          margin:0 auto 18px;
-          background:#fff;
-          padding:10px;
-          border-radius:10px
-        "
+        style="display:block;margin:0 auto 18px;background:#fff;padding:10px;border-radius:10px "
       >
 
-
-      <div style="
-        font-size:13px;
-        color:#aaa
-      ">
+      <div style="font-size:13px;color:#aaa ">
         Titular
       </div>
 
-
-      <div style="
-        font-size:18px;
-        font-weight:800;
-        margin:3px 0 14px
-      ">
-        ${esc(t.buyerName)}
+      <div style="font-size:18px;font-weight:800;margin:3px 0 14px ">
+        ${esc(buyerName)}
       </div>
 
-
-      <div style="
-        font-size:12px;
-        color:#aaa
-      ">
+      <div style="font-size:12px;color:#aaa ">
         Código do ingresso
       </div>
 
-
-      <div style="
-        font-family:monospace;
-        font-size:16px;
-        font-weight:800;
-        letter-spacing:1px;
-        margin-top:4px
-      ">
-        ${esc(t.ticketId)}
+      <div style="font-family:monospace;font-size:16px;font-weight:800;letter-spacing:1px;margin-top:4px ">
+        ${esc(ticketId)}
       </div>
 
-
-      <p style="
-        font-size:12px;
-        color:#999;
-        margin:18px 0 0
-      ">
+      <p style="font-size:12px;color:#999;margin:18px 0 0 ">
         Apresente este QR Code na entrada.
         Cada ingresso possui um código único.
       </p>
@@ -828,6 +174,34 @@ function ticketHtml(t) {
   `;
 }
 
+function ticketAttachments(tickets) {
+
+  return tickets.map(t => {
+
+    const ticketId =
+      t.ticket_id ||
+      t.ticketId ||
+      '';
+
+    const qrBase64 =
+      t.qr_base64 ||
+      t.qrBase64 ||
+      '';
+
+    if (!ticketId || !qrBase64) {
+      throw new Error(
+        `QR Code ausente para o ingresso ${ticketId || '(sem código)'}.`
+      );
+    }
+
+    return {
+      content: qrBase64,
+      filename: `qr-${ticketId}.png`,
+      contentId: `qr-${ticketId}`,
+      contentType: 'image/png'
+    };
+  });
+}
 
 /* ========================================================
    PEDIDOS
@@ -1106,8 +480,7 @@ async function fulfillOrder(
             from:
               EMAIL_FROM,
 
-            to:
-              order.buyer.email,
+            to:              order.buyer.email,
 
             subject:
               `Seu ingresso — ${EVENT_NAME}`,
@@ -1115,27 +488,16 @@ async function fulfillOrder(
             text:
               `Pagamento aprovado. Seus ${tickets.length} ingresso(s) para ${EVENT_NAME} estão neste e-mail.`,
 
+            attachments:
+              ticketAttachments(tickets),
+
             html:
               `
-                <div style="
-                  background:#070707;
-                  padding:28px 12px;
-                  font-family:Arial,sans-serif
-                ">
+                <div style="background:#070707;padding:28px 12px;font-family:Arial,sans-serif ">
 
-                  <div style="
-                    max-width:620px;
-                    margin:auto;
-                    color:#fff;
-                    text-align:center
-                  ">
+                  <div style="max-width:620px;margin:auto;color:#fff;text-align:center ">
 
-                    <div style="
-                      font-size:12px;
-                      letter-spacing:3px;
-                      color:#ff3a4a;
-                      font-weight:800
-                    ">
+                    <div style="font-size:12px;letter-spacing:3px;color:#ff3a4a;font-weight:800 ">
                       PAGAMENTO APROVADO
                     </div>
 
@@ -1158,10 +520,7 @@ async function fulfillOrder(
                       .join('')}
 
 
-                    <p style="
-                      color:#777;
-                      font-size:11px
-                    ">
+                    <p style="color:#777;font-size:11px ">
                       Pedido:
                       ${esc(order.orderId)}
                     </p>
@@ -1821,8 +1180,7 @@ app.post(
         await mpRequest(
           `https://api.mercadopago.com/v1/payments/${encodeURIComponent(
             paymentId
-          )}`
-        );
+          )}`        );
 
 
       const orderId =
@@ -2146,13 +1504,12 @@ app.post(
           text:
             `Seus ingressos para ${EVENT_NAME}.`,
 
+          attachments:
+            ticketAttachments(ts),
+
           html:
             `
-              <div style="
-                background:#070707;
-                padding:28px 12px;
-                font-family:Arial,sans-serif
-              ">
+              <div style="background:#070707;padding:28px 12px;font-family:Arial,sans-serif ">
 
                 ${ts
                   .map(ticketHtml)
