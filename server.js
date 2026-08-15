@@ -1,5 +1,7 @@
 const express = require('express');
 const path = require('path');
+const fs = require('fs');
+const sharp = require('sharp');
 const crypto = require('crypto');
 const QRCode = require('qrcode');
 const { Pool } = require('pg');
@@ -24,6 +26,7 @@ const GMAIL_USER = process.env.GMAIL_USER || '';
 const GMAIL_REFRESH_TOKEN = process.env.GMAIL_REFRESH_TOKEN || '';
 
 const EVENT_NAME = 'Baile da Madrid 2.0';
+const POSTER_PATH = path.join(__dirname, 'baile-madrid-poster.png');
 
 const batches = {
   pre: { name: 'Pré-Venda', price: 10 },
@@ -82,10 +85,10 @@ function base64UrlEncode(str) {
     .replace(/=+$/, '');
 }
 
-function createMimeMessage({ from, to, subject, text, html, attachments = [] }) {
-  const boundary = `mixed_${crypto.randomBytes(12).toString('hex')}`;
-  const alternativeBoundary =
-    `alternative_${crypto.randomBytes(12).toString('hex')}`;
+function createMimeMessage({ from, to, subject, text, html, attachments = [], inlineAttachments = [] }) {
+  const mixedBoundary = `mixed_${crypto.randomBytes(12).toString('hex')}`;
+  const relatedBoundary = `related_${crypto.randomBytes(12).toString('hex')}`;
+  const alternativeBoundary = `alternative_${crypto.randomBytes(12).toString('hex')}`;
 
   let message = '';
 
@@ -93,10 +96,15 @@ function createMimeMessage({ from, to, subject, text, html, attachments = [] }) 
   message += `To: ${to}\r\n`;
   message += `Subject: ${subject}\r\n`;
   message += `MIME-Version: 1.0\r\n`;
-  message += `Content-Type: multipart/mixed; boundary="${boundary}"\r\n`;
+  message += `Content-Type: multipart/mixed; boundary="${mixedBoundary}"\r\n`;
   message += `\r\n`;
 
-  message += `--${boundary}\r\n`;
+  // Corpo + imagens CID usadas diretamente pelo HTML.
+  message += `--${mixedBoundary}\r\n`;
+  message += `Content-Type: multipart/related; boundary="${relatedBoundary}"\r\n`;
+  message += `\r\n`;
+
+  message += `--${relatedBoundary}\r\n`;
   message += `Content-Type: multipart/alternative; boundary="${alternativeBoundary}"\r\n`;
   message += `\r\n`;
 
@@ -112,35 +120,45 @@ function createMimeMessage({ from, to, subject, text, html, attachments = [] }) 
   message += `\r\n`;
   message += `${html || ''}\r\n\r\n`;
 
-  message += `--${alternativeBoundary}--\r\n\r\n`;
+  message += `--${alternativeBoundary}--\r\n`;
 
-  for (const attachment of attachments) {
-    message += `--${boundary}\r\n`;
-    message += `Content-Type: ${attachment.contentType}; name="${attachment.filename}"\r\n`;
+  for (const attachment of inlineAttachments) {
+    message += `--${relatedBoundary}\r\n`;
+    message += `Content-Type: ${attachment.contentType || 'application/octet-stream'}; name="${attachment.filename}"\r\n`;
     message += `Content-Disposition: inline; filename="${attachment.filename}"\r\n`;
     message += `Content-Transfer-Encoding: base64\r\n`;
-
     if (attachment.contentId) {
       message += `Content-ID: <${attachment.contentId}>\r\n`;
     }
-
     message += `\r\n`;
-
-    const content = Buffer.from(attachment.content, 'base64').toString('base64');
-
+    const content = Buffer.from(String(attachment.content || ''), 'base64').toString('base64');
     for (let i = 0; i < content.length; i += 76) {
       message += content.substring(i, i + 76) + '\r\n';
     }
-
     message += `\r\n`;
   }
 
-  message += `--${boundary}--\r\n`;
+  message += `--${relatedBoundary}--\r\n`;
 
+  // Anexos normais ficam fora do multipart/related.
+  for (const attachment of attachments) {
+    message += `--${mixedBoundary}\r\n`;
+    message += `Content-Type: ${attachment.contentType || 'application/octet-stream'}; name="${attachment.filename}"\r\n`;
+    message += `Content-Disposition: attachment; filename="${attachment.filename}"\r\n`;
+    message += `Content-Transfer-Encoding: base64\r\n`;
+    message += `\r\n`;
+    const content = Buffer.from(String(attachment.content || ''), 'base64').toString('base64');
+    for (let i = 0; i < content.length; i += 76) {
+      message += content.substring(i, i + 76) + '\r\n';
+    }
+    message += `\r\n`;
+  }
+
+  message += `--${mixedBoundary}--\r\n`;
   return message;
 }
 
-async function sendGmail({ to, subject, text, html, attachments = [] }) {
+async function sendGmail({ to, subject, text, html, attachments = [], inlineAttachments = [] }) {
   if (!gmailReady()) {
     throw new Error(
       'Gmail API não está configurada. Verifique GMAIL_CLIENT_ID, ' +
@@ -156,7 +174,8 @@ async function sendGmail({ to, subject, text, html, attachments = [] }) {
     subject,
     text,
     html,
-    attachments
+    attachments,
+    inlineAttachments
   });
 
   const result = await gmail.users.messages.send({
@@ -546,60 +565,94 @@ function escapeHtml(value) {
 }
 
 function ticketHtml(ticket) {
-  const qrSrc =
-    ticket.qr_base64
-      ? `data:image/png;base64,${ticket.qr_base64}`
-      : '';
+  const ticketId = ticket.ticket_id || ticket.ticketId || '';
+  const buyerName = ticket.buyer_name || ticket.buyerName || '';
+  const buyerCpf = ticket.buyer_cpf || ticket.buyerCpf || '';
+  const batchName = ticket.batch_name || ticket.batchName || '';
+  const contentId = `ingresso-${ticketId}@bailedamadrid`;
 
   return `
-    <div style="
-      max-width:520px;
-      margin:0 auto 24px;
-      background:#111;
-      color:#fff;
-      border:1px solid #333;
-      border-radius:18px;
-      padding:24px;
-      font-family:Arial,sans-serif;
-      text-align:center
-    ">
-      <h2 style="margin-top:0">${escapeHtml(EVENT_NAME)}</h2>
-
-      <p style="margin:8px 0">
-        <strong>${escapeHtml(ticket.batch_name)}</strong>
-      </p>
-
-      <p style="margin:8px 0">
-        Titular: ${escapeHtml(ticket.buyer_name)}
-      </p>
-
-      <p style="margin:8px 0">
-        Ingresso: ${escapeHtml(ticket.ticket_id)}
-      </p>
-
-      ${
-        qrSrc
-          ? `<img src="${qrSrc}" alt="QR Code do ingresso"
-              style="width:280px;max-width:100%;height:auto;margin:18px auto;display:block">`
-          : ''
-      }
-
-      <p style="font-size:13px;color:#aaa">
-        Apresente este QR Code na entrada.
-      </p>
+    <div style="max-width:620px;margin:0 auto 26px;background:#090909;color:#fff;border:1px solid #2b2b2b;border-radius:18px;overflow:hidden;font-family:Arial,sans-serif;text-align:center">
+      <img src="cid:${escapeHtml(contentId)}" alt="Ingresso Baile da Madrid 2.0" style="display:block;width:100%;height:auto;border:0">
+      <div style="padding:18px 20px 22px">
+        <div style="font-size:12px;color:#999;letter-spacing:1px;text-transform:uppercase">${escapeHtml(batchName)}</div>
+        <p style="margin:9px 0 5px;font-size:16px"><strong>Nome: ${escapeHtml(buyerName)}</strong></p>
+        <p style="margin:5px 0;font-size:15px"><strong>CPF: ${formatCpfDisplay(buyerCpf)}</strong></p>
+        <p style="margin:13px 0 0;font-family:monospace;font-size:14px;word-break:break-all">Código do ingresso: ${escapeHtml(ticketId)}</p>
+        <p style="margin:14px 0 0;color:#aaa;font-size:12px">Apresente o QR Code correspondente na entrada.</p>
+      </div>
     </div>
   `;
 }
 
+function formatCpfDisplay(value) {
+  const d = String(value || '').replace(/\D/g, '');
+  if (d.length !== 11) return escapeHtml(value || '—');
+  return d.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
+}
+
+async function buildEmailPoster(ticket) {
+  if (!fs.existsSync(POSTER_PATH)) {
+    throw new Error(`Imagem da festa não encontrada: ${POSTER_PATH}`);
+  }
+
+  const qrBuffer = Buffer.from(String(ticket.qr_base64 || ''), 'base64');
+  if (!qrBuffer.length) {
+    throw new Error(`QR Code ausente para o ingresso ${ticket.ticket_id || '(sem código)'}.`);
+  }
+
+  const poster = sharp(POSTER_PATH);
+  const meta = await poster.metadata();
+  const posterWidth = Number(meta.width || 1087);
+  const posterHeight = Number(meta.height || 1536);
+
+  // QR pequeno, com fundo branco, no canto superior direito.
+  const qrSize = Math.max(180, Math.round(posterWidth * 0.20));
+
+  const qrPadded = await sharp(qrBuffer)
+    .resize(qrSize - 28, qrSize - 28, {
+      fit: 'contain',
+      kernel: sharp.kernel.nearest
+    })
+    .extend({
+      top: 14,
+      bottom: 14,
+      left: 14,
+      right: 14,
+      background: '#ffffff'
+    })
+    .png()
+    .toBuffer();
+
+  const qrX = Math.max(10, posterWidth - qrSize - 24);
+  const qrY = 24;
+
+  const out = await poster
+    .flatten({ background: '#ffffff' })
+    .composite([
+      { input: qrPadded, left: qrX, top: qrY }
+    ])
+    .png()
+    .toBuffer();
+
+  return out.toString('base64');
+}
+
 function ticketAttachments(tickets) {
-  return tickets
-    .filter(t => t.qr_base64)
-    .map(t => ({
-      filename: `${t.ticket_id}.png`,
+  return tickets.map(t => {
+    const ticketId = t.ticket_id || t.ticketId || '';
+    const qrBase64 = t.qr_base64 || t.qrBase64 || '';
+
+    if (!ticketId || !qrBase64) {
+      throw new Error(`QR Code ausente para o ingresso ${ticketId || '(sem código)'}.`);
+    }
+
+    return {
+      filename: `qr-${ticketId}.png`,
       contentType: 'image/png',
-      content: t.qr_base64,
-      contentId: t.ticket_id
-    }));
+      content: qrBase64
+    };
+  });
 }
 
 /* ========================================================
@@ -740,30 +793,37 @@ async function fulfillLocked(orderId) {
 
     if (!freshOrder.emailSentAt) {
       try {
+        const inlinePosters = [];
+
+        for (const ticket of tickets) {
+          const ticketId = ticket.ticket_id || '';
+          const posterBase64 = await buildEmailPoster(ticket);
+          inlinePosters.push({
+            filename: `ingresso-${ticketId}.png`,
+            contentType: 'image/png',
+            content: posterBase64,
+            contentId: `ingresso-${ticketId}@bailedamadrid`
+          });
+        }
+
         await sendGmail({
           to: freshOrder.buyer.email,
           subject: `Seu ingresso — ${EVENT_NAME}`,
           text:
-            `Seus ingressos para ${EVENT_NAME} estão anexados neste e-mail. ` +
-            `Apresente o QR Code na entrada.`,
+            `Pagamento aprovado. Seus ingressos para ${EVENT_NAME} estão neste e-mail. ` +
+            `O QR Code também está disponível como anexo.`,
           html: `
-            <div style="
-              background:#070707;
-              padding:28px 12px;
-              font-family:Arial,sans-serif
-            ">
-              <div style="
-                max-width:600px;
-                margin:0 auto;
-                color:#fff
-              ">
-                <h1>${escapeHtml(EVENT_NAME)}</h1>
-                <p>Pagamento aprovado! Seus ingressos estão abaixo.</p>
+            <div style="background:#070707;padding:18px 8px;font-family:Arial,sans-serif">
+              <div style="max-width:640px;margin:0 auto;color:#fff;text-align:center">
+                <div style="font-size:12px;letter-spacing:3px;color:#ff3a4a;font-weight:800">PAGAMENTO APROVADO</div>
+                <h1 style="margin:8px 0">${escapeHtml(EVENT_NAME)}</h1>
+                <p style="color:#bbb;margin:0 0 18px">Olá, ${escapeHtml(freshOrder.buyer.name)}. Guarde bem esse QR Code. O som não vai parar. 🔥🎶</p>
+                ${tickets.map(ticketHtml).join('')}
+                <p style="color:#777;font-size:11px">Pedido: ${escapeHtml(freshOrder.orderId)}</p>
               </div>
-
-              ${tickets.map(ticketHtml).join('')}
             </div>
           `,
+          inlineAttachments: inlinePosters,
           attachments: ticketAttachments(tickets)
         });
 
@@ -1447,10 +1507,22 @@ app.post('/api/tickets/resend/:orderId', requireAdmin, async (req, res) => {
       throw new Error('Gmail API não configurada.');
     }
 
+    const inlinePosters = [];
+    for (const ticket of tickets) {
+      const ticketId = ticket.ticket_id || '';
+      inlinePosters.push({
+        filename: `ingresso-${ticketId}.png`,
+        contentType: 'image/png',
+        content: await buildEmailPoster(ticket),
+        contentId: `ingresso-${ticketId}@bailedamadrid`
+      });
+    }
+
     await sendGmail({
       to: fresh.buyer.email,
       subject: `Reenvio — ${EVENT_NAME}`,
       text: `Seus ingressos para ${EVENT_NAME}.`,
+      inlineAttachments: inlinePosters,
       attachments: ticketAttachments(tickets),
       html: `
         <div style="
@@ -1636,6 +1708,131 @@ app.post('/api/admin/test-order', requireAdmin, async (req, res) => {
       error:
         e.message ||
         'Não foi possível criar a compra de teste.'
+    });
+  }
+});
+
+/* ========================================================
+   TESTE ESPECÍFICO DE PIX
+   ======================================================== */
+
+app.post('/api/admin/test-pix-payment', requireAdmin, async (req, res) => {
+  try {
+    const body = req.body || {};
+
+    const name = String(
+      body.name || 'Cliente Teste PIX'
+    ).trim();
+
+    const email = String(body.email || '').trim();
+
+    const phone = String(
+      body.phone || '61999999999'
+    ).replace(/\D/g, '');
+
+    const cpf = cleanCPF(
+      body.cpf || '11144477735'
+    );
+
+    const batchId = String(
+      body.batchId || 'pre'
+    );
+
+    if (!email) {
+      return res.status(400).json({
+        error: 'Informe o e-mail que receberá o teste PIX.'
+      });
+    }
+
+    if (!batches[batchId]) {
+      return res.status(400).json({
+        error: 'Tipo de ingresso PIX inválido.'
+      });
+    }
+
+    if (cpf.length !== 11) {
+      return res.status(400).json({
+        error: 'CPF de teste inválido.'
+      });
+    }
+
+    if (phone.length !== 11) {
+      return res.status(400).json({
+        error: 'Telefone de teste inválido.'
+      });
+    }
+
+    /*
+      Este endpoint é propositalmente um TESTE ADMINISTRATIVO.
+      Ele não cria uma cobrança real no Mercado Pago e não movimenta dinheiro.
+      O objetivo é testar exatamente a etapa posterior ao PIX aprovado:
+      pedido aprovado -> ingresso -> QR Code -> Gmail.
+    */
+
+    const orderId = `TEST-PIX-${crypto.randomUUID()}`;
+    const paymentId = `TEST-PIX-PAY-${crypto.randomUUID()}`;
+
+    const item = {
+      id: batchId,
+      name: batches[batchId].name,
+      quantity: 1,
+      unit_price: batches[batchId].price
+    };
+
+    await db(
+      `
+        INSERT INTO orders(
+          order_id,
+          payment_id,
+          status,
+          total,
+          buyer_name,
+          buyer_email,
+          buyer_cpf,
+          buyer_phone,
+          items
+        )
+        VALUES($1,$2,'approved',$3,$4,$5,$6,$7,$8)
+      `,
+      [
+        orderId,
+        paymentId,
+        batches[batchId].price,
+        name,
+        email,
+        cpf,
+        phone,
+        JSON.stringify([item])
+      ]
+    );
+
+    const fulfilled = await fulfillLocked(orderId);
+    const tickets = await getTickets(orderId);
+
+    return res.json({
+      ok: true,
+      test: true,
+      simulatedPayment: 'pix',
+      paymentMethod: 'pix',
+      paymentStatus: 'approved',
+      orderId,
+      paymentId,
+      status: fulfilled.status,
+      emailSent: Boolean(fulfilled.emailSentAt),
+      emailError: fulfilled.emailError || null,
+      tickets: tickets.map(t => ({
+        ticketId: t.ticket_id,
+        batchName: t.batch_name,
+        usedAt: t.used_at
+      }))
+    });
+  } catch (e) {
+    console.error('Teste PIX:', e);
+
+    return res.status(500).json({
+      error:
+        e.message ||
+        'Não foi possível executar o teste de PIX.'
     });
   }
 });
