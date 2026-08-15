@@ -1,16 +1,10 @@
 {
-  "name": "baile-madrid-mercadopago",
-  "version": "1.0.0",
-  "private": true,
-  "description": "Baile Madrid 2.0 com PIX real via Mercado Pago",
-  "main": "server.js",
-  "scripts": {
-    "start": "node server.js"
-  },
-  "engines": {
-    "node": ">=18"
-  },
-  "dependencies": {
-    "express": "^5.1.0"
-  }
+  "name":"baile-madrid-mercadopago",
+  "version":"3.0.0",
+  "private":true,
+  "description":"Baile da Madrid 2.0 — Mercado Pago, ingressos QR, e-mail e validação com PostgreSQL",
+  "main":"server.js",
+  "scripts":{"start":"node server.js"},
+  "engines":{"node":">=20 <25"},
+  "dependencies":{"dotenv":"^17.2.1","express":"^5.1.0","nodemailer":"^7.0.5","pg":"^8.16.3","qrcode":"^1.5.4"}
 }
