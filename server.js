@@ -555,8 +555,8 @@ function escapeHtml(value) {
 }
 
 function ticketHtml(ticket) {
-  const qrSrc = ticket.qr_base64
-    ? `cid:${escapeHtml(ticket.ticket_id)}`
+  const qrSrc = ticket.qr_base64 && PUBLIC_BASE_URL
+    ? `${PUBLIC_BASE_URL}/api/tickets/qr/${encodeURIComponent(ticket.ticket_id)}.png`
     : '';
 
   return `
@@ -604,14 +604,9 @@ function ticketHtml(ticket) {
 }
 
 function ticketAttachments(tickets) {
-  return tickets
-    .filter(t => t.qr_base64)
-    .map(t => ({
-      filename: `${t.ticket_id}.png`,
-      contentType: 'image/png',
-      content: t.qr_base64,
-      contentId: t.ticket_id
-    }));
+  // O QR é carregado pelo Gmail através da URL pública do servidor.
+  // Não enviamos a imagem como anexo para evitar duplicidade no Gmail.
+  return [];
 }
 
 /* ========================================================
@@ -1648,115 +1643,6 @@ app.post('/api/admin/test-order', requireAdmin, async (req, res) => {
       error:
         e.message ||
         'Não foi possível criar a compra de teste.'
-    });
-  }
-});
-
-/* ========================================================
-   TESTE ESPECÍFICO DE PIX
-   ======================================================== */
-
-app.post('/api/admin/test-pix-payment', requireAdmin, async (req, res) => {
-  try {
-    const body = req.body || {};
-
-    const name = String(
-      body.name || 'Cliente Teste PIX'
-    ).trim();
-
-    const email = String(body.email || '').trim();
-
-    const phone = String(
-      body.phone || '61999999999'
-    ).replace(/\D/g, '');
-
-    const cpf = cleanCPF(
-      body.cpf || '11144477735'
-    );
-
-    const batchId = String(
-      body.batchId || 'pre'
-    );
-
-    if (!email) {
-      return res.status(400).json({
-        error: 'Informe o e-mail que receberá o teste.'
-      });
-    }
-
-    if (!batches[batchId]) {
-      return res.status(400).json({
-        error: 'Tipo de ingresso inválido.'
-      });
-    }
-
-    if (cpf.length !== 11) {
-      return res.status(400).json({
-        error: 'CPF de teste inválido.'
-      });
-    }
-
-    const orderId = `TEST-PIX-${crypto.randomUUID()}`;
-    const paymentId = `TEST-PIX-PAY-${crypto.randomUUID()}`;
-
-    const item = {
-      id: batchId,
-      name: batches[batchId].name,
-      quantity: 1,
-      unit_price: batches[batchId].price
-    };
-
-    await db(
-      `
-        INSERT INTO orders(
-          order_id,
-          payment_id,
-          status,
-          total,
-          buyer_name,
-          buyer_email,
-          buyer_cpf,
-          buyer_phone,
-          items
-        )
-        VALUES($1,$2,'approved',$3,$4,$5,$6,$7,$8)
-      `,
-      [
-        orderId,
-        paymentId,
-        batches[batchId].price,
-        name,
-        email,
-        cpf,
-        phone,
-        JSON.stringify([item])
-      ]
-    );
-
-    const fulfilled = await fulfillLocked(orderId);
-    const tickets = await getTickets(orderId);
-
-    res.json({
-      ok: true,
-      test: true,
-      simulatedPayment: 'pix',
-      paymentStatus: 'approved',
-      orderId,
-      emailSent: Boolean(fulfilled.emailSentAt),
-      emailError: fulfilled.emailError || null,
-      tickets: tickets.map(t => ({
-        ticketId: t.ticket_id,
-        batchName: t.batch_name,
-        usedAt: t.used_at
-      }))
-    });
-  } catch (e) {
-    console.error('Teste PIX:', e);
-
-    res.status(500).json({
-      error:
-        e.message ||
-        'Não foi possível executar o teste de PIX.'
     });
   }
 });
