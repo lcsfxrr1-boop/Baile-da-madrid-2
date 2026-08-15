@@ -4,8 +4,6 @@ const express=require('express');
 const path=require('path');
 const crypto=require('crypto');
 const QRCode=require('qrcode');
-const nodemailer=require('nodemailer');
-const net=require('net');
 const {Pool}=require('pg');
 
 const app=express();
@@ -27,6 +25,11 @@ const batches={
   vip:{name:'Área VIP',price:70}
 };
 
+
+/* ========================================================
+   BANCO
+   ======================================================== */
+
 if(!process.env.DATABASE_URL){
   console.warn(
     'DATABASE_URL não configurado. O serviço não deve ser usado em produção sem Postgres.'
@@ -42,11 +45,17 @@ const pool=process.env.DATABASE_URL
   :null;
 
 async function db(query,params=[]){
-  if(!pool)throw new Error('DATABASE_URL não configurado.');
+  if(!pool){
+    throw new Error(
+      'DATABASE_URL não configurado.'
+    );
+  }
+
   return pool.query(query,params);
 }
 
 async function initDb(){
+
   if(!pool)return;
 
   await db(`CREATE TABLE IF NOT EXISTS orders(
@@ -88,11 +97,17 @@ async function initDb(){
   );
 }
 
+
+/* ========================================================
+   FUNÇÕES GERAIS
+   ======================================================== */
+
 function cleanCPF(v){
   return String(v||'').replace(/\D/g,'');
 }
 
 function splitName(name){
+
   const p=String(name||'')
     .trim()
     .split(/\s+/)
@@ -105,16 +120,23 @@ function splitName(name){
 }
 
 function calculateItems(items){
+
   if(!Array.isArray(items)||!items.length){
-    throw new Error('Nenhum ingresso selecionado.');
+    throw new Error(
+      'Nenhum ingresso selecionado.'
+    );
   }
 
   let total=0;
+
   const normalized=[];
 
   for(const item of items){
+
     const batch=batches[item.id];
-    const quantity=Number(item.quantity);
+
+    const quantity=
+      Number(item.quantity);
 
     if(
       !batch||
@@ -122,10 +144,13 @@ function calculateItems(items){
       quantity<1||
       quantity>10
     ){
-      throw new Error('Ingresso ou quantidade inválida.');
+      throw new Error(
+        'Ingresso ou quantidade inválida.'
+      );
     }
 
-    total+=batch.price*quantity;
+    total+=
+      batch.price*quantity;
 
     normalized.push({
       id:item.id,
@@ -146,10 +171,14 @@ function calculateItems(items){
     );
   }
 
-  return {normalized,total};
+  return {
+    normalized,
+    total
+  };
 }
 
 function totalTicketCount(order){
+
   return (order.items||[]).reduce(
     (sum,item)=>
       sum+Number(item.quantity||0),
@@ -158,6 +187,7 @@ function totalTicketCount(order){
 }
 
 function makeTicketCode(){
+
   return `BMD2-${crypto
     .randomBytes(5)
     .toString('hex')
@@ -165,17 +195,26 @@ function makeTicketCode(){
 }
 
 function makeTicketToken(){
-  return crypto.randomBytes(32).toString('base64url');
+
+  return crypto.randomBytes(32)
+    .toString('base64url');
 }
 
 function hashToken(token){
+
   return crypto
     .createHash('sha256')
     .update(token)
     .digest('hex');
 }
 
+
+/* ========================================================
+   ADMIN
+   ======================================================== */
+
 function requireAdmin(req,res,next){
+
   const supplied=
     req.get('x-admin-token')||
     req.body?.adminToken||
@@ -183,6 +222,7 @@ function requireAdmin(req,res,next){
     '';
 
   if(!ADMIN_TOKEN){
+
     return res.status(503).json({
       error:
         'ADMIN_TOKEN não configurado no servidor.'
@@ -190,8 +230,10 @@ function requireAdmin(req,res,next){
   }
 
   if(supplied!==ADMIN_TOKEN){
+
     return res.status(401).json({
-      error:'Acesso não autorizado.'
+      error:
+        'Acesso não autorizado.'
     });
   }
 
@@ -200,46 +242,121 @@ function requireAdmin(req,res,next){
 
 
 /* ========================================================
-   EMAIL / SMTP
+   RESEND
    ======================================================== */
 
 function mailReady(){
+
   return Boolean(
-    process.env.SMTP_HOST&&
-    process.env.SMTP_USER&&
-    process.env.SMTP_PASS&&
+    process.env.RESEND_API_KEY&&
     process.env.EMAIL_FROM
   );
 }
 
-let mailTransporter=null;
+async function resendSendEmail({
+  from,
+  to,
+  subject,
+  html,
+  text,
+  attachments=[]
+}){
 
-function getMailer(){
-  if(!mailReady())return null;
+  if(!process.env.RESEND_API_KEY){
 
-  if(!mailTransporter){
-    mailTransporter=nodemailer.createTransport({
-      host:process.env.SMTP_HOST,
-      port:Number(process.env.SMTP_PORT||587),
-
-      secure:
-        String(
-          process.env.SMTP_SECURE||'false'
-        ).toLowerCase()==='true',
-
-      auth:{
-        user:process.env.SMTP_USER,
-        pass:process.env.SMTP_PASS
-      }
-    });
+    throw new Error(
+      'RESEND_API_KEY não configurado no servidor.'
+    );
   }
 
-  return mailTransporter;
+  if(!from){
+
+    throw new Error(
+      'EMAIL_FROM não configurado no servidor.'
+    );
+  }
+
+  if(!to){
+
+    throw new Error(
+      'E-mail do destinatário não informado.'
+    );
+  }
+
+  const body={
+    from,
+    to:[to],
+    subject,
+    html,
+    text
+  };
+
+  if(attachments.length){
+
+    body.attachments=
+      attachments.map(file=>({
+        filename:file.filename,
+        content:file.content.toString('base64')
+      }));
+  }
+
+  const response=
+    await fetch(
+      'https://api.resend.com/emails',
+      {
+        method:'POST',
+
+        headers:{
+          Authorization:
+            `Bearer ${process.env.RESEND_API_KEY}`,
+
+          'Content-Type':
+            'application/json'
+        },
+
+        body:
+          JSON.stringify(body)
+      }
+    );
+
+  const responseText=
+    await response.text();
+
+  let data;
+
+  try{
+    data=
+      JSON.parse(responseText);
+  }catch{
+    data={
+      message:responseText
+    };
+  }
+
+  if(!response.ok){
+
+    const error=
+      new Error(
+        data?.message||
+        data?.error||
+        'Erro ao enviar e-mail pelo Resend.'
+      );
+
+    error.status=
+      response.status;
+
+    error.response=
+      responseText;
+
+    throw error;
+  }
+
+  return data;
 }
 
 
 /* ========================================================
-   TESTE SMTP
+   TESTE RESEND
    ======================================================== */
 
 app.get(
@@ -247,179 +364,98 @@ app.get(
   requireAdmin,
   async(req,res)=>{
 
-    const host=
-      process.env.SMTP_HOST||'';
-
-    const port=
-      Number(process.env.SMTP_PORT||587);
-
-    const secure=
-      String(
-        process.env.SMTP_SECURE||'false'
-      ).toLowerCase()==='true';
-
     try{
 
       if(!mailReady()){
+
         return res.status(500).json({
+
           ok:false,
+
           stage:'config',
+
           error:
-            'SMTP incompleto. Verifique SMTP_HOST, SMTP_USER, SMTP_PASS e EMAIL_FROM.'
+            'Resend incompleto. Verifique RESEND_API_KEY e EMAIL_FROM.'
+
         });
       }
 
       /*
-       * TESTE 1
-       * Verifica se o Render consegue abrir
-       * uma conexão TCP com o servidor SMTP.
+       * Teste usando a API HTTPS do Resend.
+       *
+       * Não enviamos um e-mail real aqui.
+       * Apenas verificamos se a API Key consegue
+       * acessar a API do Resend.
        */
 
-      const tcpResult=
-        await new Promise((resolve)=>{
+      const response=
+        await fetch(
+          'https://api.resend.com/domains',
+          {
+            method:'GET',
 
-          const socket=
-            new net.Socket();
-
-          let finished=false;
-
-          const finish=(result)=>{
-
-            if(finished)return;
-
-            finished=true;
-
-            clearTimeout(timer);
-
-            try{
-              socket.destroy();
-            }catch{}
-
-            resolve(result);
-          };
-
-          const timer=
-            setTimeout(()=>{
-
-              finish({
-                ok:false,
-
-                error:
-                  'Timeout ao conectar no servidor SMTP.',
-
-                code:
-                  'ETIMEDOUT',
-
-                command:
-                  'CONN'
-              });
-
-            },15000);
-
-          socket.connect(
-            port,
-            host,
-            ()=>{
-
-              finish({
-                ok:true
-              });
-
+            headers:{
+              Authorization:
+                `Bearer ${process.env.RESEND_API_KEY}`
             }
-          );
+          }
+        );
 
-          socket.on(
-            'error',
-            err=>{
+      const text=
+        await response.text();
 
-              finish({
-                ok:false,
+      let data;
 
-                error:
-                  err.message||
-                  'Erro na conexão TCP.',
+      try{
+        data=JSON.parse(text);
+      }catch{
+        data={
+          message:text
+        };
+      }
 
-                code:
-                  err.code||null,
-
-                command:
-                  err.command||
-                  'CONN'
-              });
-
-            }
-          );
-
-        });
-
-
-      /*
-       * Se a conexão TCP falhar,
-       * o problema está antes da autenticação.
-       */
-
-      if(!tcpResult.ok){
+      if(!response.ok){
 
         return res.status(500).json({
 
           ok:false,
 
-          stage:'tcp',
+          stage:'resend',
 
           error:
-            tcpResult.error,
+            data?.message||
+            data?.error||
+            'Resend recusou a conexão/API Key.',
 
-          code:
-            tcpResult.code,
+          status:
+            response.status
 
-          command:
-            tcpResult.command,
-
-          host,
-          port,
-          secure
         });
-
       }
-
-
-      /*
-       * TESTE 2
-       * Agora testa o Nodemailer e a autenticação SMTP.
-       */
-
-      const transporter=
-        getMailer();
-
-      await transporter.verify();
 
       return res.json({
 
         ok:true,
 
-        stage:'smtp',
+        stage:'resend',
 
         message:
-          'SMTP conectado e autenticado com sucesso.',
-
-        host,
-
-        port,
-
-        secure,
-
-        user:
-          process.env.SMTP_USER,
+          'Resend conectado e API Key aceita com sucesso.',
 
         from:
-          process.env.EMAIL_FROM
+          process.env.EMAIL_FROM,
+
+        domains:
+          Array.isArray(data?.data)
+            ?data.data.length
+            :null
 
       });
 
     }catch(e){
 
       console.error(
-        'Erro no teste SMTP:',
+        'Erro no teste Resend:',
         e
       );
 
@@ -427,29 +463,16 @@ app.get(
 
         ok:false,
 
-        stage:'smtp',
+        stage:'resend',
 
         error:
           e.message||
-          'Falha ao conectar ao SMTP.',
+          'Não foi possível conectar ao Resend.',
 
         code:
-          e.code||null,
-
-        command:
-          e.command||null,
-
-        response:
-          e.response||null,
-
-        host,
-
-        port,
-
-        secure
+          e.code||null
 
       });
-
     }
   }
 );
@@ -459,32 +482,51 @@ app.get(
    MERCADO PAGO
    ======================================================== */
 
-async function mpRequest(url,options={}){
+async function mpRequest(
+  url,
+  options={}
+){
 
   if(!ACCESS_TOKEN){
+
     throw new Error(
       'MP_ACCESS_TOKEN não configurado no servidor.'
     );
   }
 
-  const r=await fetch(url,{
-    ...options,
+  const r=
+    await fetch(
+      url,
+      {
+        ...options,
 
-    headers:{
-      Authorization:`Bearer ${ACCESS_TOKEN}`,
-      'Content-Type':'application/json',
-      ...(options.headers||{})
-    }
-  });
+        headers:{
+          Authorization:
+            `Bearer ${ACCESS_TOKEN}`,
 
-  const text=await r.text();
+          'Content-Type':
+            'application/json',
+
+          ...(options.headers||{})
+        }
+      }
+    );
+
+  const text=
+    await r.text();
 
   let data;
 
   try{
-    data=JSON.parse(text);
+
+    data=
+      JSON.parse(text);
+
   }catch{
-    data={message:text};
+
+    data={
+      message:text
+    };
   }
 
   if(!r.ok){
@@ -510,12 +552,17 @@ async function mpRequest(url,options={}){
    ======================================================== */
 
 function ticketUrl(token){
+
   return `${PUBLIC_BASE_URL}/validar.html?ticket=${encodeURIComponent(token)}`;
 }
 
-async function buildTicket(order,item){
+async function buildTicket(
+  order,
+  item
+){
 
   if(!PUBLIC_BASE_URL){
+
     throw new Error(
       'PUBLIC_BASE_URL não configurado.'
     );
@@ -538,18 +585,34 @@ async function buildTicket(order,item){
     );
 
   return {
+
     ticketId,
-    tokenHash:hashToken(token),
-    batchId:item.id,
-    batchName:item.name,
-    unitPrice:item.unit_price,
-    buyerName:order.buyer.name,
-    buyerEmail:order.buyer.email,
-    qrBase64:qrDataUrl.split(',')[1]
+
+    tokenHash:
+      hashToken(token),
+
+    batchId:
+      item.id,
+
+    batchName:
+      item.name,
+
+    unitPrice:
+      item.unit_price,
+
+    buyerName:
+      order.buyer.name,
+
+    buyerEmail:
+      order.buyer.email,
+
+    qrBase64:
+      qrDataUrl.split(',')[1]
   };
 }
 
 function esc(v){
+
   return String(v??'').replace(
     /[&<>"']/g,
     c=>({
@@ -675,35 +738,51 @@ async function getOrder(orderId){
 
   if(!r.rows[0])return null;
 
-  const o=r.rows[0];
+  const o=
+    r.rows[0];
 
   return {
 
-    orderId:o.order_id,
+    orderId:
+      o.order_id,
 
-    paymentId:o.payment_id,
+    paymentId:
+      o.payment_id,
 
-    status:o.status,
+    status:
+      o.status,
 
-    total:Number(o.total),
+    total:
+      Number(o.total),
 
-    items:o.items,
+    items:
+      o.items,
 
     buyer:{
-      name:o.buyer_name,
-      email:o.buyer_email,
-      cpf:o.buyer_cpf,
-      phone:o.buyer_phone
+      name:
+        o.buyer_name,
+
+      email:
+        o.buyer_email,
+
+      cpf:
+        o.buyer_cpf,
+
+      phone:
+        o.buyer_phone
     },
 
-    createdAt:o.created_at,
+    createdAt:
+      o.created_at,
 
-    updatedAt:o.updated_at,
+    updatedAt:
+      o.updated_at,
 
-    emailSentAt:o.email_sent_at,
+    emailSentAt:
+      o.email_sent_at,
 
-    emailError:o.email_error
-
+    emailError:
+      o.email_error
   };
 }
 
@@ -757,6 +836,7 @@ async function fulfillOrder(orderId){
     !order||
     order.status!=='approved'
   ){
+
     return order;
   }
 
@@ -779,7 +859,6 @@ async function fulfillOrder(orderId){
       ){
 
         flat.push(item);
-
       }
     }
 
@@ -847,7 +926,7 @@ async function fulfillOrder(orderId){
 
 
   /* =========================
-     ENVIO DO EMAIL
+     ENVIO PELO RESEND
      ========================= */
 
   if(
@@ -866,7 +945,7 @@ async function fulfillOrder(orderId){
           WHERE order_id=$2
         `,
         [
-          'SMTP não está configurado corretamente.',
+          'Resend não está configurado corretamente.',
           orderId
         ]
       );
@@ -874,9 +953,6 @@ async function fulfillOrder(orderId){
     }else{
 
       try{
-
-        const transporter=
-          getMailer();
 
         const tickets=
           await getTickets(
@@ -893,79 +969,82 @@ async function fulfillOrder(orderId){
               Buffer.from(
                 t.qr_base64,
                 'base64'
-              ),
-
-            cid:
-              `qr-${t.ticket_id}`
+              )
 
           }));
 
-        await transporter.sendMail({
+        const result=
+          await resendSendEmail({
 
-          from:
-            process.env.EMAIL_FROM,
+            from:
+              process.env.EMAIL_FROM,
 
-          to:
-            order.buyer.email,
+            to:
+              order.buyer.email,
 
-          subject:
-            `Seu ingresso — ${EVENT_NAME}`,
+            subject:
+              `Seu ingresso — ${EVENT_NAME}`,
 
-          text:
-            `Pagamento aprovado. Seus ${tickets.length} ingresso(s) para ${EVENT_NAME} estão neste e-mail.`,
+            text:
+              `Pagamento aprovado. Seus ${tickets.length} ingresso(s) para ${EVENT_NAME} estão neste e-mail.`,
 
-          html:
-            `
-              <div style="
-                background:#070707;
-                padding:28px 12px;
-                font-family:Arial,sans-serif
-              ">
-
+            html:
+              `
                 <div style="
-                  max-width:620px;
-                  margin:auto;
-                  color:#fff;
-                  text-align:center
+                  background:#070707;
+                  padding:28px 12px;
+                  font-family:Arial,sans-serif
                 ">
 
                   <div style="
-                    font-size:12px;
-                    letter-spacing:3px;
-                    color:#ff3a4a;
-                    font-weight:800
+                    max-width:620px;
+                    margin:auto;
+                    color:#fff;
+                    text-align:center
                   ">
-                    PAGAMENTO APROVADO
+
+                    <div style="
+                      font-size:12px;
+                      letter-spacing:3px;
+                      color:#ff3a4a;
+                      font-weight:800
+                    ">
+                      PAGAMENTO APROVADO
+                    </div>
+
+                    <h1>
+                      ${esc(EVENT_NAME)}
+                    </h1>
+
+                    <p style="color:#bbb">
+                      Olá,
+                      ${esc(order.buyer.name)}.
+                      Guarde este e-mail e apresente
+                      o QR Code correspondente na entrada.
+                    </p>
+
+                    ${tickets.map(ticketHtml).join('')}
+
+                    <p style="
+                      color:#777;
+                      font-size:11px
+                    ">
+                      Pedido:
+                      ${esc(order.orderId)}
+                    </p>
+
                   </div>
 
-                  <h1>
-                    ${esc(EVENT_NAME)}
-                  </h1>
-
-                  <p style="color:#bbb">
-                    Olá,
-                    ${esc(order.buyer.name)}.
-                    Guarde este e-mail e apresente
-                    o QR Code correspondente na entrada.
-                  </p>
-
-                  ${tickets.map(ticketHtml).join('')}
-
-                  <p style="
-                    color:#777;
-                    font-size:11px
-                  ">
-                    Pedido:
-                    ${esc(order.orderId)}
-                  </p>
-
                 </div>
-              </div>
-            `,
+              `,
 
-          attachments
+            attachments
+          });
 
-        });
+        console.log(
+          'E-mail enviado pelo Resend:',
+          result
+        );
 
         await db(
           `
@@ -982,21 +1061,20 @@ async function fulfillOrder(orderId){
       }catch(emailError){
 
         console.error(
-          'ERRO AO ENVIAR EMAIL:',
+          'ERRO AO ENVIAR EMAIL PELO RESEND:',
           emailError
         );
 
         const errorText=
           [
             emailError.message,
-            emailError.code
-              ?`code=${emailError.code}`
+
+            emailError.status
+              ?`status=${emailError.status}`
               :null,
+
             emailError.response
               ?`response=${emailError.response}`
-              :null,
-            emailError.command
-              ?`command=${emailError.command}`
               :null
           ]
           .filter(Boolean)
@@ -1030,7 +1108,8 @@ async function fulfillOrder(orderId){
    LOCK
    ======================================================== */
 
-const locks=new Map();
+const locks=
+  new Map();
 
 function fulfillLocked(id){
 
@@ -1071,26 +1150,34 @@ app.get(
     try{
 
       if(pool){
+
         await db(
           'SELECT 1'
         );
       }
 
       res.json({
+
         ok:true,
+
         db:Boolean(pool),
-        event:EVENT_NAME
+
+        event:
+          EVENT_NAME
+
       });
 
     }catch(e){
 
       res.status(503).json({
+
         ok:false,
-        error:e.message
+
+        error:
+          e.message
+
       });
-
     }
-
   }
 );
 
@@ -1108,7 +1195,8 @@ app.post(
       const {
         buyer,
         items
-      }=req.body||{};
+      }=
+        req.body||{};
 
       const name=
         String(
@@ -1137,19 +1225,21 @@ app.post(
       ){
 
         return res.status(400).json({
+
           error:
             'Informe nome, e-mail e CPF válidos.'
-        });
 
+        });
       }
 
       if(phone.length!==11){
 
         return res.status(400).json({
+
           error:
             'Informe um telefone válido.'
-        });
 
+        });
       }
 
       const {
@@ -1190,7 +1280,9 @@ app.post(
 
         payer:{
           email,
+
           first_name,
+
           last_name,
 
           identification:{
@@ -1198,14 +1290,12 @@ app.post(
             number:cpf
           }
         }
-
       };
 
       if(PUBLIC_BASE_URL){
 
         body.notification_url=
           `${PUBLIC_BASE_URL}/api/mercadopago/webhook`;
-
       }
 
       const payment=
@@ -1237,7 +1327,6 @@ app.post(
         throw new Error(
           'Mercado Pago não retornou o QR Code PIX.'
         );
-
       }
 
       await db(
@@ -1271,15 +1360,21 @@ app.post(
       );
 
       res.json({
+
         orderId,
+
         paymentId:
           String(payment.id),
+
         status:
           payment.status,
+
         qrCode:
           tx.qr_code,
+
         qrCodeBase64:
           tx.qr_code_base64
+
       });
 
     }catch(e){
@@ -1287,13 +1382,13 @@ app.post(
       console.error(e);
 
       res.status(400).json({
+
         error:
           e.message||
           'Não foi possível gerar o PIX.'
+
       });
-
     }
-
   }
 );
 
@@ -1316,10 +1411,11 @@ app.get(
       if(!order){
 
         return res.status(404).json({
+
           error:
             'Compra não encontrada.'
-        });
 
+        });
       }
 
       const payment=
@@ -1340,6 +1436,7 @@ app.get(
         [
           payment.status||
             order.status,
+
           order.orderId
         ]
       );
@@ -1386,13 +1483,13 @@ app.get(
     }catch(e){
 
       res.status(500).json({
+
         error:
           e.message||
           'Não foi possível consultar o pagamento.'
+
       });
-
     }
-
   }
 );
 
@@ -1449,9 +1546,7 @@ app.post(
           await fulfillLocked(
             orderId
           );
-
         }
-
       }
 
     }catch(e){
@@ -1460,9 +1555,7 @@ app.post(
         'Webhook Mercado Pago:',
         e
       );
-
     }
-
   }
 );
 
@@ -1486,10 +1579,11 @@ app.post(
       if(!token){
 
         return res.status(400).json({
+
           error:
             'QR Code inválido.'
-        });
 
+        });
       }
 
       const h=
@@ -1515,11 +1609,13 @@ app.post(
       if(!t){
 
         return res.status(404).json({
+
           valid:false,
+
           error:
             'Ingresso não encontrado.'
-        });
 
+        });
       }
 
       if(
@@ -1527,22 +1623,28 @@ app.post(
       ){
 
         return res.status(400).json({
+
           valid:false,
+
           error:
             'Pagamento não aprovado.'
-        });
 
+        });
       }
 
       if(t.used_at){
 
         return res.status(409).json({
+
           valid:false,
+
           used:true,
+
           error:
             'Este ingresso já foi utilizado.',
 
           ticket:{
+
             ticketId:
               t.ticket_id,
 
@@ -1555,9 +1657,7 @@ app.post(
             usedAt:
               t.used_at
           }
-
         });
-
       }
 
       const used=
@@ -1575,12 +1675,15 @@ app.post(
       if(!used.rows[0]){
 
         return res.status(409).json({
+
           valid:false,
+
           used:true,
+
           error:
             'Este ingresso já foi utilizado.'
-        });
 
+        });
       }
 
       return res.json({
@@ -1593,6 +1696,7 @@ app.post(
           'Entrada liberada.',
 
         ticket:{
+
           ticketId:
             t.ticket_id,
 
@@ -1601,20 +1705,20 @@ app.post(
 
           buyerName:
             t.buyer_name
-        }
 
+        }
       });
 
     }catch(e){
 
       res.status(500).json({
+
         error:
           e.message||
           'Não foi possível validar o ingresso.'
+
       });
-
     }
-
   }
 );
 
@@ -1638,10 +1742,11 @@ app.post(
       if(!order){
 
         return res.status(404).json({
+
           error:
             'Compra não encontrada.'
-        });
 
+        });
       }
 
       if(
@@ -1649,10 +1754,11 @@ app.post(
       ){
 
         return res.status(400).json({
+
           error:
             'Pagamento ainda não aprovado.'
-        });
 
+        });
       }
 
       const tickets=
@@ -1668,7 +1774,6 @@ app.post(
         await fulfillLocked(
           order.orderId
         );
-
       }
 
       const fresh=
@@ -1681,18 +1786,14 @@ app.post(
           order.orderId
         );
 
-      const transporter=
-        getMailer();
-
-      if(!transporter){
+      if(!mailReady()){
 
         throw new Error(
-          'SMTP não configurado.'
+          'Resend não configurado.'
         );
-
       }
 
-      await transporter.sendMail({
+      await resendSendEmail({
 
         from:
           process.env.EMAIL_FROM,
@@ -1707,9 +1808,16 @@ app.post(
           `Seus ingressos para ${EVENT_NAME}.`,
 
         html:
-          `<div style="font-family:Arial">
-            ${ts.map(ticketHtml).join('')}
-          </div>`,
+          `
+            <div style="
+              font-family:Arial,sans-serif;
+              background:#070707;
+              color:#fff;
+              padding:28px 12px
+            ">
+              ${ts.map(ticketHtml).join('')}
+            </div>
+          `,
 
         attachments:
           ts.map(t=>({
@@ -1721,13 +1829,9 @@ app.post(
               Buffer.from(
                 t.qr_base64,
                 'base64'
-              ),
-
-            cid:
-              `qr-${t.ticket_id}`
+              )
 
           }))
-
       });
 
       await db(
@@ -1743,21 +1847,24 @@ app.post(
       );
 
       res.json({
+
         ok:true,
+
         message:
           'Ingressos reenviados.'
+
       });
 
     }catch(e){
 
       res.status(500).json({
+
         error:
           e.message||
           'Não foi possível reenviar os ingressos.'
+
       });
-
     }
-
   }
 );
 
@@ -1819,11 +1926,12 @@ app.get(
     }catch(e){
 
       res.status(500).json({
-        error:e.message
+
+        error:
+          e.message
+
       });
-
     }
-
   }
 );
 
@@ -1875,28 +1983,31 @@ app.post(
       if(!email){
 
         return res.status(400).json({
+
           error:
             'Informe o e-mail que receberá o ingresso de teste.'
-        });
 
+        });
       }
 
       if(!batches[batchId]){
 
         return res.status(400).json({
+
           error:
             'Tipo de ingresso de teste inválido.'
-        });
 
+        });
       }
 
       if(cpf.length!==11){
 
         return res.status(400).json({
+
           error:
             'CPF de teste inválido.'
-        });
 
+        });
       }
 
       const orderId=
@@ -1906,10 +2017,19 @@ app.post(
         `TEST-PAY-${crypto.randomUUID()}`;
 
       const item={
-        id:batchId,
-        name:batches[batchId].name,
-        quantity:1,
-        unit_price:batches[batchId].price
+
+        id:
+          batchId,
+
+        name:
+          batches[batchId].name,
+
+        quantity:
+          1,
+
+        unit_price:
+          batches[batchId].price
+
       };
 
       await db(
@@ -1932,12 +2052,19 @@ app.post(
         `,
         [
           orderId,
+
           paymentId,
+
           batches[batchId].price,
+
           name,
+
           email,
+
           cpf,
+
           phone,
+
           JSON.stringify([item])
         ]
       );
@@ -1985,7 +2112,6 @@ app.post(
               t.used_at
 
           }))
-
       });
 
     }catch(e){
@@ -1996,13 +2122,13 @@ app.post(
       );
 
       res.status(500).json({
+
         error:
           e.message||
           'Não foi possível criar a compra de teste.'
+
       });
-
     }
-
   }
 );
 
@@ -2044,13 +2170,13 @@ app.delete(
       );
 
       res.status(500).json({
+
         error:
           e.message||
           'Não foi possível excluir os testes.'
+
       });
-
     }
-
   }
 );
 
@@ -2082,6 +2208,7 @@ initDb()
       PORT,
       '0.0.0.0',
       ()=>
+
         console.log(
           `${EVENT_NAME} em http://0.0.0.0:${PORT}`
         )
