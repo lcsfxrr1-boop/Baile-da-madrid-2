@@ -1342,7 +1342,8 @@ async function consumeTicketToken(rawToken) {
     `
       SELECT
         t.*,
-        o.status AS order_status
+        o.status AS order_status,
+        o.buyer_cpf AS buyer_cpf
       FROM tickets t
       JOIN orders o ON o.order_id=t.order_id
       WHERE t.token_hash=$1
@@ -1386,9 +1387,10 @@ async function consumeTicketToken(rawToken) {
   if (!used.rows[0]) {
     const fresh = await db(
       `
-        SELECT ticket_id,batch_name,buyer_name,used_at
-        FROM tickets
-        WHERE ticket_id=$1
+        SELECT t.ticket_id,t.batch_name,t.buyer_name,o.buyer_cpf,t.used_at
+        FROM tickets t
+        JOIN orders o ON o.order_id=t.order_id
+        WHERE t.ticket_id=$1
       `,
       [t.ticket_id]
     );
@@ -1406,6 +1408,7 @@ async function consumeTicketToken(rawToken) {
               ticketId: already.ticket_id,
               batchName: already.batch_name,
               buyerName: already.buyer_name,
+              buyerCpf: already.buyer_cpf,
               usedAt: already.used_at
             }
           : undefined
@@ -1423,6 +1426,7 @@ async function consumeTicketToken(rawToken) {
         ticketId: t.ticket_id,
         batchName: t.batch_name,
         buyerName: t.buyer_name,
+        buyerCpf: t.buyer_cpf,
         usedAt: used.rows[0].used_at
       }
     }
@@ -1458,6 +1462,47 @@ app.post('/api/tickets/validate', requireAdmin, async (req, res) => {
         e.message ||
         'Não foi possível validar o ingresso.'
     });
+  }
+});
+
+/* ========================================================
+   HISTÓRICO DA PORTARIA
+   ======================================================== */
+
+app.get('/api/tickets/history', requireAdmin, async (req, res) => {
+  try {
+    const limitRaw = Number.parseInt(req.query.limit, 10);
+    const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 200) : 100;
+    const search = String(req.query.search || '').trim();
+
+    const r = await db(
+      `
+        SELECT
+          t.ticket_id AS "ticketId",
+          t.batch_name AS "batchName",
+          t.buyer_name AS "buyerName",
+          o.buyer_cpf AS "buyerCpf",
+          t.used_at AS "usedAt"
+        FROM tickets t
+        JOIN orders o ON o.order_id=t.order_id
+        WHERE t.used_at IS NOT NULL
+          AND (
+            $1 = ''
+            OR t.buyer_name ILIKE '%' || $1 || '%'
+            OR o.buyer_cpf ILIKE '%' || $1 || '%'
+            OR t.ticket_id ILIKE '%' || $1 || '%'
+            OR t.batch_name ILIKE '%' || $1 || '%'
+          )
+        ORDER BY t.used_at DESC, t.ticket_id DESC
+        LIMIT $2
+      `,
+      [search, limit]
+    );
+
+    return res.json({ entries: r.rows, count: r.rows.length });
+  } catch (e) {
+    console.error('Erro ao carregar histórico da portaria:', e);
+    return res.status(500).json({ error: e.message || 'Não foi possível carregar o histórico.' });
   }
 });
 
