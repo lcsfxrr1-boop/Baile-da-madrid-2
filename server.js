@@ -772,13 +772,6 @@ async function fulfillLocked(orderId) {
 
     if (!freshOrder.emailSentAt) {
       try {
-        // A foto da festa é enviada como imagem inline (CID), para
-        // aparecer dentro do e-mail como plano de fundo.
-        // O único anexo visível ao usuário será o QR Code.
-        const inlinePosters = [
-          emailPosterInlineAttachment()
-        ];
-
         await sendGmail({
           to: freshOrder.buyer.email,
           subject: `Seu ingresso — ${EVENT_NAME}`,
@@ -866,7 +859,6 @@ async function fulfillLocked(orderId) {
               </table>
             </div>
           `,
-          inlineAttachments: inlinePosters,
           attachments: ticketAttachments(tickets)
         });
 
@@ -1550,10 +1542,6 @@ app.post('/api/tickets/resend/:orderId', requireAdmin, async (req, res) => {
       throw new Error('Gmail API não configurada.');
     }
 
-    const inlinePosters = [
-      emailPosterInlineAttachment()
-    ];
-
     await sendGmail({
       to: fresh.buyer.email,
       subject: `Reenvio — ${EVENT_NAME}`,
@@ -1569,7 +1557,7 @@ app.post('/api/tickets/resend/:orderId', requireAdmin, async (req, res) => {
       attachments: ticketAttachments(tickets),
       html: `
         <div style="margin:0;padding:0;background:#050505;font-family:Arial,sans-serif">
-          <div style="width:100%;max-width:680px;min-height:900px;margin:0 auto;padding:28px 18px 34px;background-color:#090909;background-image:url('cid:baile-madrid-background@bailedamadrid');background-repeat:no-repeat;background-position:center top;background-size:100% auto;color:#fff;text-align:center">
+          <div style="width:100%;max-width:680px;min-height:900px;margin:0 auto;padding:28px 18px 34px;background-color:#090909;color:#fff;text-align:center">
             <div style="padding:14px 12px 16px;background:rgba(0,0,0,.68);border:1px solid rgba(255,255,255,.18);border-radius:16px;margin-bottom:18px">
               <div style="font-size:15px;letter-spacing:3px;color:#ff4052;font-weight:800">REENVIO DE INGRESSOS</div>
               <h1 style="margin:7px 0 5px;font-size:36px;line-height:1.15;color:#fff">${escapeHtml(EVENT_NAME)}</h1>
