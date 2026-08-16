@@ -776,90 +776,42 @@ async function fulfillLocked(orderId) {
           to: freshOrder.buyer.email,
           subject: `Seu ingresso — ${EVENT_NAME}`,
           text:
-            `Olá, ${freshOrder.buyer.name}.\n\n` +
-            `Seu pagamento foi aprovado com sucesso e sua compra para ${EVENT_NAME} foi confirmada. ` +
-            `Estamos muito felizes em ter você com a gente. Seus ingressos e todas as informações principais ` +
-            `da sua compra estão neste e-mail.\n\n` +
-            `Guarde este e-mail até o dia do evento. O QR Code de cada ingresso foi enviado como arquivo anexo ` +
-            `e deverá ser apresentado na entrada para a validação do ingresso. Se você comprou mais de um ingresso, ` +
-            `confira os anexos e apresente o QR Code correspondente a cada ingresso.\n\n` +
-            `Pedido: ${freshOrder.orderId}\n` +
-            `Evento: ${EVENT_NAME}\n\n` +
-            `Obrigado pela compra e por fazer parte do Baile da Madrid 2.0. Nos vemos no evento!`,
+            `🔥 INGRESSO CONFIRMADO! 🔥\n\n` +
+            `Fala, ${freshOrder.buyer.name}! 😎\n\n` +
+            `Seu pagamento foi aprovado e seu ingresso para ${EVENT_NAME} está garantido! 🕺💃🔥\n\n` +
+            `🎟️ Seu QR Code está anexado neste e-mail.\n` +
+            `Guarde ele e apresente na entrada no dia do baile.\n\n` +
+            `🔥 Agora é só preparar o look, chamar a tropa e partir pro baile!\n\n` +
+            `BAILE DA MADRID 2.0 🚀🔥\n` +
+            `Vai ser daquele jeito! 😈🎶\n\n` +
+            `Pedido: ${freshOrder.orderId}\n\n` +
+            `Até o baile! 🥳🔥`,
+          attachments: ticketAttachments(tickets),
           html: `
-            <div style="margin:0;padding:0;background:#050505;font-family:Arial,sans-serif">
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:collapse;background:#050505">
-                <tr>
-                  <td align="center" style="padding:0">
+            <div style="margin:0;padding:0;background:#050505;font-family:Arial,sans-serif;color:#fff">
+              <div style="width:100%;max-width:680px;margin:0 auto;padding:30px 20px 36px;background:#090909;color:#fff;text-align:center">
+                <div style="padding:24px 16px;background:#111;border:1px solid rgba(255,255,255,.15);border-radius:18px">
+                  <div style="font-size:28px;font-weight:900;letter-spacing:1px">🔥 INGRESSO CONFIRMADO! 🔥</div>
+                  <h1 style="margin:14px 0 8px;font-size:34px;line-height:1.15;color:#fff">${escapeHtml(EVENT_NAME)}</h1>
+                  <p style="margin:0;color:#fff;font-size:19px;line-height:1.5">Fala, ${escapeHtml(freshOrder.buyer.name)}! 😎</p>
+                  <p style="margin:10px 0 0;color:#fff;font-size:17px;line-height:1.55">Seu pagamento foi aprovado e seu ingresso está garantido! 🕺💃🔥</p>
+                </div>
 
-                    <!--[if gte mso 9]>
-                    <v:rect xmlns:v="urn:schemas-microsoft-com:vml" fill="true" stroke="false" style="width:680px">
-                      <v:fill type="frame" src="cid:baile-madrid-background@bailedamadrid" color="#090909"/>
-                      <v:textbox inset="0,0,0,0">
-                    <![endif]-->
+                ${tickets.map(ticketHtml).join('')}
 
-                    <div
-                      style="
-                        width:100%;
-                        max-width:680px;
-                        min-height:900px;
-                        margin:0 auto;
-                        padding:28px 18px 34px;
-                        background-color:#090909;
-                        background-image:url('cid:baile-madrid-background@bailedamadrid');
-                        background-repeat:no-repeat;
-                        background-position:center top;
-                        background-size:100% auto;
-                        color:#fff;
-                        text-align:center;
-                      "
-                    >
+                <div style="margin-top:18px;padding:22px 18px;background:#111;border-radius:16px;color:#fff;font-size:16px;line-height:1.65;text-align:left">
+                  <p style="margin:0 0 14px"><strong>🎟️ Seu QR Code está anexado neste e-mail.</strong></p>
+                  <p style="margin:0 0 14px">Guarde ele e apresente na entrada no dia do baile.</p>
+                  <p style="margin:0 0 14px">🔥 Agora é só preparar o look, chamar a tropa e partir pro baile!</p>
+                  <p style="margin:0 0 14px;text-align:center;font-size:20px;font-weight:900">BAILE DA MADRID 2.0 🚀🔥</p>
+                  <p style="margin:0 0 14px;text-align:center;font-size:18px;font-weight:800">Vai ser daquele jeito! 😈🎶</p>
+                  <p style="margin:0"><strong>Pedido:</strong> ${escapeHtml(freshOrder.orderId)}</p>
+                </div>
 
-                      <div style="padding:14px 12px 16px;background:rgba(0,0,0,.68);border:1px solid rgba(255,255,255,.18);border-radius:16px;margin-bottom:18px">
-                        <div style="font-size:15px;letter-spacing:3px;color:#ff4052;font-weight:800">
-                          PAGAMENTO APROVADO
-                        </div>
-
-                        <h1 style="margin:7px 0 5px;font-size:36px;line-height:1.15;color:#fff">
-                          ${escapeHtml(EVENT_NAME)}
-                        </h1>
-
-                        <p style="margin:0;color:#fff;font-size:18px;line-height:1.65">
-                          Olá, ${escapeHtml(freshOrder.buyer.name)}.
-                          Seu ingresso está neste e-mail.
-                        </p>
-                      </div>
-
-                      ${tickets.map(ticketHtml).join('')}
-
-                      <div style="margin-top:18px;padding:20px 18px;background:rgba(0,0,0,.80);border-radius:14px;color:#fff;font-size:15px;line-height:1.75;text-align:left">
-                        <p style="margin:0 0 12px"><strong>Olá, ${escapeHtml(freshOrder.buyer.name)}!</strong></p>
-                        <p style="margin:0 0 12px">Seu pagamento foi aprovado com sucesso e sua compra para <strong>${escapeHtml(EVENT_NAME)}</strong> está confirmada.</p>
-                        <p style="margin:0 0 12px">Este e-mail contém as informações da sua compra e os seus ingressos. Recomendamos que você mantenha esta mensagem salva até o dia do evento para facilitar o acesso às informações.</p>
-                        <p style="margin:0 0 12px"><strong>Sobre os QR Codes:</strong> cada ingresso possui um QR Code próprio e ele foi enviado como <strong>arquivo anexo</strong> neste e-mail. Na entrada do evento, apresente o QR Code correspondente para que nossa equipe possa realizar a leitura e validar o seu ingresso.</p>
-                        <p style="margin:0 0 12px">Se você comprou mais de um ingresso, confira todos os anexos antes do evento e evite compartilhar os QR Codes com outras pessoas. Cada QR Code é destinado à validação do ingresso correspondente.</p>
-                        <p style="margin:0 0 12px">Caso tenha comprado este ingresso para outra pessoa, encaminhe o QR Code correto ao titular do ingresso e certifique-se de que ele esteja disponível no momento da entrada.</p>
-                        <p style="margin:0 0 12px"><strong>Pedido:</strong> ${escapeHtml(freshOrder.orderId)}</p>
-                        <p style="margin:0">Obrigado pela compra e por fazer parte do <strong>Baile da Madrid 2.0</strong>. Esperamos você no evento. Nos vemos lá!</p>
-                      </div>
-
-                      <p style="margin:22px 0 0;color:#eee;font-size:13px">
-                        Guarde este e-mail e os anexos dos QR Codes até o momento da entrada.
-                      </p>
-
-                    </div>
-
-                    <!--[if gte mso 9]>
-                      </v:textbox>
-                    </v:rect>
-                    <![endif]-->
-
-                  </td>
-                </tr>
-              </table>
+                <p style="margin:22px 0 0;color:#eee;font-size:14px">Até o baile! 🥳🔥</p>
+              </div>
             </div>
-          `,
-          attachments: ticketAttachments(tickets)
+          `
         });
 
         await db(
@@ -1546,31 +1498,35 @@ app.post('/api/tickets/resend/:orderId', requireAdmin, async (req, res) => {
       to: fresh.buyer.email,
       subject: `Reenvio — ${EVENT_NAME}`,
       text:
-        `Olá, ${fresh.buyer.name}.\n\n` +
-        `Estamos reenviando seus ingressos para ${EVENT_NAME}. ` +
-        `O pagamento já foi aprovado e este e-mail contém novamente as informações da sua compra.\n\n` +
-        `Os QR Codes dos ingressos estão disponíveis como arquivos anexos. ` +
-        `Apresente o QR Code correspondente na entrada do evento e mantenha este e-mail salvo até o dia da festa.\n\n` +
+        `🔥 SEUS INGRESSOS ESTÃO DE VOLTA! 🔥\n\n` +
+        `Fala, ${fresh.buyer.name}! 😎\n\n` +
+        `Estamos reenviando seus ingressos para ${EVENT_NAME}. 🕺💃🔥\n\n` +
+        `🎟️ Os QR Codes estão anexados neste e-mail.\n` +
+        `Guarde eles e apresente o QR Code correspondente na entrada.\n\n` +
+        `🔥 Prepare o look, chama a tropa e partiu baile!\n\n` +
+        `BAILE DA MADRID 2.0 🚀🔥\n` +
+        `Vai ser daquele jeito! 😈🎶\n\n` +
         `Pedido: ${fresh.orderId}\n\n` +
-        `Obrigado pela compra. Nos vemos no Baile da Madrid 2.0!`,
-      inlineAttachments: inlinePosters,
+        `Até o baile! 🥳🔥`,
       attachments: ticketAttachments(tickets),
       html: `
-        <div style="margin:0;padding:0;background:#050505;font-family:Arial,sans-serif">
-          <div style="width:100%;max-width:680px;min-height:900px;margin:0 auto;padding:28px 18px 34px;background-color:#090909;color:#fff;text-align:center">
-            <div style="padding:14px 12px 16px;background:rgba(0,0,0,.68);border:1px solid rgba(255,255,255,.18);border-radius:16px;margin-bottom:18px">
-              <div style="font-size:15px;letter-spacing:3px;color:#ff4052;font-weight:800">REENVIO DE INGRESSOS</div>
-              <h1 style="margin:7px 0 5px;font-size:36px;line-height:1.15;color:#fff">${escapeHtml(EVENT_NAME)}</h1>
-              <p style="margin:0;color:#fff;font-size:18px;line-height:1.65">Olá, ${escapeHtml(fresh.buyer.name)}. Seus ingressos estão novamente disponíveis neste e-mail.</p>
+        <div style="margin:0;padding:0;background:#050505;font-family:Arial,sans-serif;color:#fff">
+          <div style="width:100%;max-width:680px;margin:0 auto;padding:30px 20px 36px;background:#090909;color:#fff;text-align:center">
+            <div style="padding:24px 16px;background:#111;border:1px solid rgba(255,255,255,.15);border-radius:18px">
+              <div style="font-size:25px;font-weight:900">🔥 SEUS INGRESSOS ESTÃO DE VOLTA! 🔥</div>
+              <h1 style="margin:14px 0 8px;font-size:34px;line-height:1.15;color:#fff">${escapeHtml(EVENT_NAME)}</h1>
+              <p style="margin:0;color:#fff;font-size:18px;line-height:1.55">Fala, ${escapeHtml(fresh.buyer.name)}! 😎</p>
             </div>
             ${tickets.map(ticketHtml).join('')}
-            <div style="margin-top:18px;padding:20px 18px;background:rgba(0,0,0,.80);border-radius:14px;color:#fff;font-size:15px;line-height:1.75;text-align:left">
-              <p style="margin:0 0 12px"><strong>Seus ingressos foram reenviados com sucesso.</strong></p>
-              <p style="margin:0 0 12px">O QR Code de cada ingresso está disponível como <strong>arquivo anexo</strong>. No dia do evento, apresente o QR Code correspondente para que nossa equipe possa realizar a leitura e validar sua entrada.</p>
-              <p style="margin:0 0 12px">Se houver mais de um ingresso, confira todos os anexos e mantenha cada QR Code disponível. Evite compartilhar os códigos com pessoas que não sejam os titulares dos ingressos.</p>
-              <p style="margin:0 0 12px"><strong>Pedido:</strong> ${escapeHtml(fresh.orderId)}</p>
-              <p style="margin:0">Obrigado pela compra e por fazer parte do <strong>Baile da Madrid 2.0</strong>. Nos vemos no evento!</p>
+            <div style="margin-top:18px;padding:22px 18px;background:#111;border-radius:16px;color:#fff;font-size:16px;line-height:1.65;text-align:left">
+              <p style="margin:0 0 14px"><strong>🎟️ Os QR Codes estão anexados neste e-mail.</strong></p>
+              <p style="margin:0 0 14px">Guarde eles e apresente o QR Code correspondente na entrada.</p>
+              <p style="margin:0 0 14px">🔥 Prepare o look, chama a tropa e partiu baile!</p>
+              <p style="margin:0 0 14px;text-align:center;font-size:20px;font-weight:900">BAILE DA MADRID 2.0 🚀🔥</p>
+              <p style="margin:0 0 14px;text-align:center;font-size:18px;font-weight:800">Vai ser daquele jeito! 😈🎶</p>
+              <p style="margin:0"><strong>Pedido:</strong> ${escapeHtml(fresh.orderId)}</p>
             </div>
+            <p style="margin:22px 0 0;color:#eee;font-size:14px">Até o baile! 🥳🔥</p>
           </div>
         </div>
       `
