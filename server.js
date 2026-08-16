@@ -29,11 +29,11 @@ const EVENT_NAME = 'Baile da Madrid 2.0';
 const POSTER_PATH = path.join(__dirname, 'baile-madrid-poster.png');
 
 const batches = {
-  pre: { name: 'Pré-Venda', price: 10 },
+  pre: { name: 'Pré-Venda', price: 15 },
   lote1: { name: '1º Lote', price: 20 },
   lote2: { name: '2º Lote', price: 25 },
   lote3: { name: '3º Lote', price: 30 },
-  vip: { name: 'Área VIP', price: 70 }
+  lounge: { name: 'lounge', price: 70 }
 };
 
 /* ========================================================
