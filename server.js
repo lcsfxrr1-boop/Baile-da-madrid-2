@@ -33,7 +33,7 @@ const batches = {
   lote1: { name: '1º Lote', price: 20 },
   lote2: { name: '2º Lote', price: 25 },
   lote3: { name: '3º Lote', price: 30 },
-  vip: { name: 'area vip', price: 70 }
+  lounge: { name: 'lounge', price: 70 }
 };
 
 /* ========================================================
@@ -1269,6 +1269,55 @@ app.post('/api/mercadopago/webhook', async (req, res) => {
     }
   } catch (e) {
     console.error('Webhook Mercado Pago:', e);
+  }
+});
+
+/* ========================================================
+   MEUS INGRESSOS — CONSULTA DO CLIENTE
+   ======================================================== */
+app.get('/api/my-tickets', async (req, res) => {
+  try {
+    const email = String(req.query.email || '').trim().toLowerCase();
+    const cpf = String(req.query.cpf || '').replace(/\D/g, '');
+
+    if (!email || !email.includes('@') || cpf.length !== 11) {
+      return res.status(400).json({ error: 'Informe o e-mail e o CPF usados na compra.' });
+    }
+
+    const orders = await db(
+      `SELECT order_id, buyer_name, buyer_email, buyer_cpf, status
+       FROM orders
+       WHERE LOWER(buyer_email)=LOWER($1)
+         AND REGEXP_REPLACE(buyer_cpf, '\\D', '', 'g')=$2
+         AND status='approved'
+       ORDER BY created_at DESC`,
+      [email, cpf]
+    );
+
+    if (!orders.rows.length) {
+      return res.status(404).json({ error: 'Nenhuma compra aprovada encontrada para esses dados.' });
+    }
+
+    const tickets = [];
+    for (const order of orders.rows) {
+      const rows = await getTickets(order.order_id);
+      for (const t of rows) {
+        tickets.push({
+          ticketId: t.ticket_id,
+          orderId: t.order_id,
+          batchName: t.batch_name,
+          unitPrice: t.unit_price,
+          buyerName: t.buyer_name,
+          usedAt: t.used_at,
+          qrUrl: `/api/tickets/qr/${encodeURIComponent(t.ticket_id)}.png`
+        });
+      }
+    }
+
+    return res.json({ buyerName: orders.rows[0].buyer_name, tickets });
+  } catch (e) {
+    console.error('Erro ao consultar meus ingressos:', e);
+    return res.status(500).json({ error: 'Não foi possível carregar seus ingressos.' });
   }
 });
 
