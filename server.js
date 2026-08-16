@@ -33,7 +33,7 @@ const batches = {
   lote1: { name: '1º Lote', price: 20 },
   lote2: { name: '2º Lote', price: 25 },
   lote3: { name: '3º Lote', price: 30 },
-  lounge: { name: 'lounge', price: 70 }
+  vip: { name: 'area vip', price: 70 }
 };
 
 /* ========================================================
