@@ -369,8 +369,12 @@ function calculateItems(items) {
   const normalized = [];
 
   for (const item of items) {
-    const batch = batches[item.id];
-    const quantity = Number(item.quantity);
+    // O front-end pode enviar o VIP como "vip", enquanto o servidor
+    // mantém esse ingresso cadastrado internamente como "lounge".
+    const rawId = String(item?.id || '').trim().toLowerCase();
+    const itemId = rawId === 'vip' ? 'lounge' : rawId;
+    const batch = batches[itemId];
+    const quantity = Number(item?.quantity);
 
     if (
       !batch ||
@@ -384,7 +388,7 @@ function calculateItems(items) {
     total += batch.price * quantity;
 
     normalized.push({
-      id: item.id,
+      id: itemId,
       name: batch.name,
       quantity,
       unit_price: batch.price
