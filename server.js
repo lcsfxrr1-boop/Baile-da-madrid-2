@@ -29,11 +29,22 @@ const EVENT_NAME = 'Baile da Madrid 2.0';
 const POSTER_PATH = path.join(__dirname, 'baile-madrid-poster.png');
 
 const batches = {
+  // Pré-venda e VIP são unissex.
   pre: { name: 'Pré-Venda', price: 15 },
-  lote1: { name: '1º Lote', price: 20 },
-  lote2: { name: '2º Lote', price: 25 },
-  lote3: { name: '3º Lote', price: 30 },
-  lounge: { name: 'lounge', price: 70 }
+  lounge: { name: 'Área VIP', price: 70 },
+
+  // A partir do 1º lote, o ingresso masculino custa R$ 5 a mais.
+  'lote1-feminino': { name: '1º Lote — Feminino', price: 20 },
+  'lote1-masculino': { name: '1º Lote — Masculino', price: 25 },
+  'lote2-feminino': { name: '2º Lote — Feminino', price: 25 },
+  'lote2-masculino': { name: '2º Lote — Masculino', price: 30 },
+  'lote3-feminino': { name: '3º Lote — Feminino', price: 30 },
+  'lote3-masculino': { name: '3º Lote — Masculino', price: 35 },
+
+  // IDs antigos continuam apontando para a opção feminina correspondente.
+  lote1: { name: '1º Lote — Feminino', price: 20 },
+  lote2: { name: '2º Lote — Feminino', price: 25 },
+  lote3: { name: '3º Lote — Feminino', price: 30 }
 };
 
 /* ========================================================
