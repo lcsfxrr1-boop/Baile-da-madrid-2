@@ -29,22 +29,22 @@ const EVENT_NAME = 'Baile da Madrid 2.0';
 const POSTER_PATH = path.join(__dirname, 'baile-madrid-poster.png');
 
 const batches = {
-  // Pré-venda e VIP são unissex.
-  pre: { name: 'Pré-Venda', price: 15 },
-  lounge: { name: 'Área VIP', price: 70 },
+  // PrÃ©-venda e VIP sÃ£o unissex.
+  pre: { name: 'PrÃ©-Venda', price: 15 },
+  lounge: { name: 'Ãrea VIP', price: 70 },
 
-  // A partir do 1º lote, o ingresso masculino custa R$ 5 a mais.
-  'lote1-feminino': { name: '1º Lote — Feminino', price: 20 },
-  'lote1-masculino': { name: '1º Lote — Masculino', price: 25 },
-  'lote2-feminino': { name: '2º Lote — Feminino', price: 25 },
-  'lote2-masculino': { name: '2º Lote — Masculino', price: 30 },
-  'lote3-feminino': { name: '3º Lote — Feminino', price: 30 },
-  'lote3-masculino': { name: '3º Lote — Masculino', price: 35 },
+  // A partir do 1Âº lote, o ingresso masculino custa R$ 5 a mais.
+  'lote1-feminino': { name: '1Âº Lote â€” Feminino', price: 20 },
+  'lote1-masculino': { name: '1Âº Lote â€” Masculino', price: 25 },
+  'lote2-feminino': { name: '2Âº Lote â€” Feminino', price: 25 },
+  'lote2-masculino': { name: '2Âº Lote â€” Masculino', price: 30 },
+  'lote3-feminino': { name: '3Âº Lote â€” Feminino', price: 30 },
+  'lote3-masculino': { name: '3Âº Lote â€” Masculino', price: 35 },
 
-  // IDs antigos continuam apontando para a opção feminina correspondente.
-  lote1: { name: '1º Lote — Feminino', price: 20 },
-  lote2: { name: '2º Lote — Feminino', price: 25 },
-  lote3: { name: '3º Lote — Feminino', price: 30 }
+  // IDs antigos continuam apontando para a opÃ§Ã£o feminina correspondente.
+  lote1: { name: '1Âº Lote â€” Feminino', price: 20 },
+  lote2: { name: '2Âº Lote â€” Feminino', price: 25 },
+  lote3: { name: '3Âº Lote â€” Feminino', price: 30 }
 };
 
 /* ========================================================
@@ -63,7 +63,7 @@ function gmailReady() {
 
 function getGmailClient() {
   if (!GMAIL_CLIENT_ID || !GMAIL_CLIENT_SECRET || !GMAIL_REDIRECT_URI) {
-    throw new Error('Credenciais da Gmail API não configuradas.');
+    throw new Error('Credenciais da Gmail API nÃ£o configuradas.');
   }
 
   const oauth2Client = new google.auth.OAuth2(
@@ -172,7 +172,7 @@ function createMimeMessage({ from, to, subject, text, html, attachments = [], in
 async function sendGmail({ to, subject, text, html, attachments = [], inlineAttachments = [] }) {
   if (!gmailReady()) {
     throw new Error(
-      'Gmail API não está configurada. Verifique GMAIL_CLIENT_ID, ' +
+      'Gmail API nÃ£o estÃ¡ configurada. Verifique GMAIL_CLIENT_ID, ' +
       'GMAIL_CLIENT_SECRET, GMAIL_REDIRECT_URI, GMAIL_USER e GMAIL_REFRESH_TOKEN.'
     );
   }
@@ -200,7 +200,7 @@ async function sendGmail({ to, subject, text, html, attachments = [], inlineAtta
 }
 
 /* ========================================================
-   AUTORIZAÇÃO GMAIL
+   AUTORIZAÃ‡ÃƒO GMAIL
    ======================================================== */
 
 app.get('/api/gmail/auth', (req, res) => {
@@ -230,7 +230,7 @@ app.get('/api/gmail/oauth2callback', async (req, res) => {
     const code = String(req.query.code || '').trim();
 
     if (!code) {
-      return res.status(400).send('Código OAuth não recebido.');
+      return res.status(400).send('CÃ³digo OAuth nÃ£o recebido.');
     }
 
     const oauth2Client = new google.auth.OAuth2(
@@ -243,7 +243,7 @@ app.get('/api/gmail/oauth2callback', async (req, res) => {
 
     if (!tokens.refresh_token) {
       return res.status(500).send(
-        'O Google não retornou um refresh token. Tente novamente usando /api/gmail/auth.'
+        'O Google nÃ£o retornou um refresh token. Tente novamente usando /api/gmail/auth.'
       );
     }
 
@@ -266,7 +266,7 @@ app.get('/api/gmail/oauth2callback', async (req, res) => {
           <p>Copie o Refresh Token abaixo e coloque no Render como:</p>
           <strong>GMAIL_REFRESH_TOKEN</strong>
           <code>${String(tokens.refresh_token).replace(/</g, '&lt;')}</code>
-          <p>Depois de salvar a variável no Render, faça um novo deploy.</p>
+          <p>Depois de salvar a variÃ¡vel no Render, faÃ§a um novo deploy.</p>
         </div>
       </body>
       </html>
@@ -282,7 +282,7 @@ app.get('/api/gmail/oauth2callback', async (req, res) => {
    ======================================================== */
 
 if (!process.env.DATABASE_URL) {
-  console.warn('DATABASE_URL não configurado.');
+  console.warn('DATABASE_URL nÃ£o configurado.');
 }
 
 const pool = process.env.DATABASE_URL
@@ -295,7 +295,7 @@ const pool = process.env.DATABASE_URL
 
 async function db(query, params = []) {
   if (!pool) {
-    throw new Error('DATABASE_URL não configurado.');
+    throw new Error('DATABASE_URL nÃ£o configurado.');
   }
 
   return pool.query(query, params);
@@ -381,7 +381,7 @@ function calculateItems(items) {
 
   for (const item of items) {
     // O front-end pode enviar o VIP como "vip", enquanto o servidor
-    // mantém esse ingresso cadastrado internamente como "lounge".
+    // mantÃ©m esse ingresso cadastrado internamente como "lounge".
     const rawId = String(item?.id || '').trim().toLowerCase();
     const itemId = rawId === 'vip' ? 'lounge' : rawId;
     const batch = batches[itemId];
@@ -393,7 +393,7 @@ function calculateItems(items) {
       quantity < 1 ||
       quantity > 10
     ) {
-      throw new Error('Ingresso ou quantidade inválida.');
+      throw new Error('Ingresso ou quantidade invÃ¡lida.');
     }
 
     total += batch.price * quantity;
@@ -407,7 +407,7 @@ function calculateItems(items) {
   }
 
   if (normalized.reduce((s, i) => s + i.quantity, 0) > 10) {
-    throw new Error('Limite máximo de 10 ingressos por compra.');
+    throw new Error('Limite mÃ¡ximo de 10 ingressos por compra.');
   }
 
   return { normalized, total };
@@ -441,13 +441,13 @@ function requireAdmin(req, res, next) {
 
   if (!ADMIN_TOKEN) {
     return res.status(503).json({
-      error: 'ADMIN_TOKEN não configurado no servidor.'
+      error: 'ADMIN_TOKEN nÃ£o configurado no servidor.'
     });
   }
 
   if (supplied !== ADMIN_TOKEN) {
     return res.status(401).json({
-      error: 'Acesso não autorizado.'
+      error: 'Acesso nÃ£o autorizado.'
     });
   }
 
@@ -528,7 +528,7 @@ async function countTickets(orderId) {
 
 async function mpRequest(url, options = {}) {
   if (!ACCESS_TOKEN) {
-    throw new Error('MP_ACCESS_TOKEN não configurado.');
+    throw new Error('MP_ACCESS_TOKEN nÃ£o configurado.');
   }
 
   const response = await fetch(url, {
@@ -600,10 +600,10 @@ function ticketHtml(ticket) {
         <strong>CPF: ${formatCpfDisplay(buyerCpf)}</strong>
       </p>
       <p style="margin:10px 0 0;font-family:monospace;font-size:13px;word-break:break-all">
-        Código: ${escapeHtml(ticketId)}
+        CÃ³digo: ${escapeHtml(ticketId)}
       </p>
       <p style="margin:10px 0 0;color:#ddd;font-size:11px">
-        O QR Code deste ingresso está anexado a este e-mail.
+        O QR Code deste ingresso estÃ¡ anexado a este e-mail.
       </p>
     </div>
   `;
@@ -611,13 +611,13 @@ function ticketHtml(ticket) {
 
 function formatCpfDisplay(value) {
   const d = String(value || '').replace(/\D/g, '');
-  if (d.length !== 11) return escapeHtml(value || '—');
+  if (d.length !== 11) return escapeHtml(value || 'â€”');
   return d.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
 }
 
 function emailPosterInlineAttachment() {
   if (!fs.existsSync(POSTER_PATH)) {
-    throw new Error(`Imagem da festa não encontrada: ${POSTER_PATH}`);
+    throw new Error(`Imagem da festa nÃ£o encontrada: ${POSTER_PATH}`);
   }
 
   const posterBase64 = fs
@@ -638,7 +638,7 @@ function ticketAttachments(tickets) {
     const qrBase64 = t.qr_base64 || t.qrBase64 || '';
 
     if (!ticketId || !qrBase64) {
-      throw new Error(`QR Code ausente para o ingresso ${ticketId || '(sem código)'}.`);
+      throw new Error(`QR Code ausente para o ingresso ${ticketId || '(sem cÃ³digo)'}.`);
     }
 
     return {
@@ -683,7 +683,7 @@ async function fulfillLocked(orderId) {
     const order = orderResult.rows[0];
 
     if (!order) {
-      throw new Error('Compra não encontrada.');
+      throw new Error('Compra nÃ£o encontrada.');
     }
 
     if (order.status !== 'approved') {
@@ -706,7 +706,7 @@ async function fulfillLocked(orderId) {
         const batch = batches[item.id];
 
         if (!batch) {
-          throw new Error(`Lote inválido: ${item.id}`);
+          throw new Error(`Lote invÃ¡lido: ${item.id}`);
         }
 
         for (let q = 0; q < Number(item.quantity); q++) {
@@ -779,7 +779,7 @@ async function fulfillLocked(orderId) {
           SET email_error=$1, updated_at=NOW()
           WHERE order_id=$2
         `,
-        ['Gmail API não configurada.', orderId]
+        ['Gmail API nÃ£o configurada.', orderId]
       );
 
       return await getOrder(orderId);
@@ -789,41 +789,41 @@ async function fulfillLocked(orderId) {
       try {
         await sendGmail({
           to: freshOrder.buyer.email,
-          subject: `Seu ingresso — ${EVENT_NAME}`,
+          subject: `Seu ingresso â€” ${EVENT_NAME}`,
           text:
-            `🔥 INGRESSO CONFIRMADO! 🔥\n\n` +
-            `Fala, ${freshOrder.buyer.name}! 😎\n\n` +
-            `Seu pagamento foi aprovado e seu ingresso para ${EVENT_NAME} está garantido! 🕺💃🔥\n\n` +
-            `🎟️ Seu QR Code está anexado neste e-mail.\n` +
+            `ðŸ”¥ INGRESSO CONFIRMADO! ðŸ”¥\n\n` +
+            `Fala, ${freshOrder.buyer.name}! ðŸ˜Ž\n\n` +
+            `Seu pagamento foi aprovado e seu ingresso para ${EVENT_NAME} estÃ¡ garantido! ðŸ•ºðŸ’ƒðŸ”¥\n\n` +
+            `ðŸŽŸï¸ Seu QR Code estÃ¡ anexado neste e-mail.\n` +
             `Guarde ele e apresente na entrada no dia do baile.\n\n` +
-            `🔥 Agora é só preparar o look, chamar a tropa e partir pro baile!\n\n` +
-            `BAILE DA MADRID 2.0 🚀🔥\n` +
-            `Vai ser daquele jeito! 😈🎶\n\n` +
+            `ðŸ”¥ Agora Ã© sÃ³ preparar o look, chamar a tropa e partir pro baile!\n\n` +
+            `BAILE DA MADRID 2.0 ðŸš€ðŸ”¥\n` +
+            `Vai ser daquele jeito! ðŸ˜ˆðŸŽ¶\n\n` +
             `Pedido: ${freshOrder.orderId}\n\n` +
-            `Até o baile! 🥳🔥`,
+            `AtÃ© o baile! ðŸ¥³ðŸ”¥`,
           attachments: ticketAttachments(tickets),
           html: `
             <div style="margin:0;padding:0;background:#050505;font-family:Arial,sans-serif;color:#fff">
               <div style="width:100%;max-width:680px;margin:0 auto;padding:30px 20px 36px;background:#090909;color:#fff;text-align:center">
                 <div style="padding:24px 16px;background:#111;border:1px solid rgba(255,255,255,.15);border-radius:18px">
-                  <div style="font-size:28px;font-weight:900;letter-spacing:1px">🔥 INGRESSO CONFIRMADO! 🔥</div>
+                  <div style="font-size:28px;font-weight:900;letter-spacing:1px">ðŸ”¥ INGRESSO CONFIRMADO! ðŸ”¥</div>
                   <h1 style="margin:14px 0 8px;font-size:34px;line-height:1.15;color:#fff">${escapeHtml(EVENT_NAME)}</h1>
-                  <p style="margin:0;color:#fff;font-size:19px;line-height:1.5">Fala, ${escapeHtml(freshOrder.buyer.name)}! 😎</p>
-                  <p style="margin:10px 0 0;color:#fff;font-size:17px;line-height:1.55">Seu pagamento foi aprovado e seu ingresso está garantido! 🕺💃🔥</p>
+                  <p style="margin:0;color:#fff;font-size:19px;line-height:1.5">Fala, ${escapeHtml(freshOrder.buyer.name)}! ðŸ˜Ž</p>
+                  <p style="margin:10px 0 0;color:#fff;font-size:17px;line-height:1.55">Seu pagamento foi aprovado e seu ingresso estÃ¡ garantido! ðŸ•ºðŸ’ƒðŸ”¥</p>
                 </div>
 
                 ${tickets.map(ticketHtml).join('')}
 
                 <div style="margin-top:18px;padding:22px 18px;background:#111;border-radius:16px;color:#fff;font-size:16px;line-height:1.65;text-align:left">
-                  <p style="margin:0 0 14px"><strong>🎟️ Seu QR Code está anexado neste e-mail.</strong></p>
+                  <p style="margin:0 0 14px"><strong>ðŸŽŸï¸ Seu QR Code estÃ¡ anexado neste e-mail.</strong></p>
                   <p style="margin:0 0 14px">Guarde ele e apresente na entrada no dia do baile.</p>
-                  <p style="margin:0 0 14px">🔥 Agora é só preparar o look, chamar a tropa e partir pro baile!</p>
-                  <p style="margin:0 0 14px;text-align:center;font-size:20px;font-weight:900">BAILE DA MADRID 2.0 🚀🔥</p>
-                  <p style="margin:0 0 14px;text-align:center;font-size:18px;font-weight:800">Vai ser daquele jeito! 😈🎶</p>
+                  <p style="margin:0 0 14px">ðŸ”¥ Agora Ã© sÃ³ preparar o look, chamar a tropa e partir pro baile!</p>
+                  <p style="margin:0 0 14px;text-align:center;font-size:20px;font-weight:900">BAILE DA MADRID 2.0 ðŸš€ðŸ”¥</p>
+                  <p style="margin:0 0 14px;text-align:center;font-size:18px;font-weight:800">Vai ser daquele jeito! ðŸ˜ˆðŸŽ¶</p>
                   <p style="margin:0"><strong>Pedido:</strong> ${escapeHtml(freshOrder.orderId)}</p>
                 </div>
 
-                <p style="margin:22px 0 0;color:#eee;font-size:14px">Até o baile! 🥳🔥</p>
+                <p style="margin:22px 0 0;color:#eee;font-size:14px">AtÃ© o baile! ðŸ¥³ðŸ”¥</p>
               </div>
             </div>
           `
@@ -877,7 +877,7 @@ app.get('/api/admin/test-smtp', requireAdmin, async (req, res) => {
     if (!gmailReady()) {
       return res.status(500).json({
         ok: false,
-        error: 'Gmail API não configurada. Verifique as variáveis GMAIL_*.'
+        error: 'Gmail API nÃ£o configurada. Verifique as variÃ¡veis GMAIL_*.'
       });
     }
 
@@ -895,12 +895,12 @@ app.get('/api/admin/test-smtp', requireAdmin, async (req, res) => {
 
     const info = await sendGmail({
       to,
-      subject: `Teste de e-mail — ${EVENT_NAME}`,
-      text: 'Este é um teste da Gmail API.',
+      subject: `Teste de e-mail â€” ${EVENT_NAME}`,
+      text: 'Este Ã© um teste da Gmail API.',
       html: `
         <div style="font-family:Arial,sans-serif;padding:30px">
           <h2>Gmail API funcionando!</h2>
-          <p>Este é um teste do sistema de e-mails do ${escapeHtml(EVENT_NAME)}.</p>
+          <p>Este Ã© um teste do sistema de e-mails do ${escapeHtml(EVENT_NAME)}.</p>
         </div>
       `
     });
@@ -938,13 +938,13 @@ app.post('/api/create-pix', async (req, res) => {
 
     if (!name || !email || cpf.length !== 11) {
       return res.status(400).json({
-        error: 'Informe nome, e-mail e CPF válidos.'
+        error: 'Informe nome, e-mail e CPF vÃ¡lidos.'
       });
     }
 
     if (phone.length !== 11) {
       return res.status(400).json({
-        error: 'Informe um telefone válido.'
+        error: 'Informe um telefone vÃ¡lido.'
       });
     }
 
@@ -990,7 +990,7 @@ app.post('/api/create-pix', async (req, res) => {
     const tx = payment.point_of_interaction?.transaction_data;
 
     if (!tx?.qr_code || !tx?.qr_code_base64) {
-      throw new Error('Mercado Pago não retornou o QR Code PIX.');
+      throw new Error('Mercado Pago nÃ£o retornou o QR Code PIX.');
     }
 
     await db(
@@ -1032,13 +1032,13 @@ app.post('/api/create-pix', async (req, res) => {
     console.error('Erro criar PIX:', e);
 
     res.status(400).json({
-      error: e.message || 'Não foi possível gerar o PIX.'
+      error: e.message || 'NÃ£o foi possÃ­vel gerar o PIX.'
     });
   }
 });
 
 /* ========================================================
-   CRIAR PAGAMENTO COM CARTÃO
+   CRIAR PAGAMENTO COM CARTÃƒO
    ======================================================== */
 
 app.post('/api/create-card-payment', async (req, res) => {
@@ -1064,20 +1064,20 @@ app.post('/api/create-card-payment', async (req, res) => {
 
     if (!name || !email || cpf.length !== 11) {
       return res.status(400).json({
-        error: 'Informe nome, e-mail e CPF válidos.'
+        error: 'Informe nome, e-mail e CPF vÃ¡lidos.'
       });
     }
 
     if (phone.length !== 11) {
       return res.status(400).json({
-        error: 'Informe um telefone válido.'
+        error: 'Informe um telefone vÃ¡lido.'
       });
     }
 
     if (!cardToken || !methodId) {
       return res.status(400).json({
         error:
-          'Não foi possível tokenizar o cartão. Verifique os dados.'
+          'NÃ£o foi possÃ­vel tokenizar o cartÃ£o. Verifique os dados.'
       });
     }
 
@@ -1087,7 +1087,7 @@ app.post('/api/create-card-payment', async (req, res) => {
       parsedInstallments > 24
     ) {
       return res.status(400).json({
-        error: 'Quantidade de parcelas inválida.'
+        error: 'Quantidade de parcelas invÃ¡lida.'
       });
     }
 
@@ -1177,12 +1177,12 @@ app.post('/api/create-card-payment', async (req, res) => {
       statusDetail: payment.status_detail || null
     });
   } catch (e) {
-    console.error('Erro pagamento cartão:', e);
+    console.error('Erro pagamento cartÃ£o:', e);
 
     res.status(400).json({
       error:
         e.message ||
-        'Não foi possível processar o pagamento com cartão.'
+        'NÃ£o foi possÃ­vel processar o pagamento com cartÃ£o.'
     });
   }
 });
@@ -1197,7 +1197,7 @@ app.get('/api/payment-status/:orderId', async (req, res) => {
 
     if (!order) {
       return res.status(404).json({
-        error: 'Compra não encontrada.'
+        error: 'Compra nÃ£o encontrada.'
       });
     }
 
@@ -1240,7 +1240,7 @@ app.get('/api/payment-status/:orderId', async (req, res) => {
     res.status(500).json({
       error:
         e.message ||
-        'Não foi possível consultar o pagamento.'
+        'NÃ£o foi possÃ­vel consultar o pagamento.'
     });
   }
 });
@@ -1288,7 +1288,7 @@ app.post('/api/mercadopago/webhook', async (req, res) => {
 });
 
 /* ========================================================
-   MEUS INGRESSOS — CONSULTA DO CLIENTE
+   MEUS INGRESSOS â€” CONSULTA DO CLIENTE
    ======================================================== */
 app.get('/api/my-tickets', async (req, res) => {
   try {
@@ -1332,7 +1332,7 @@ app.get('/api/my-tickets', async (req, res) => {
     return res.json({ buyerName: orders.rows[0].buyer_name, tickets });
   } catch (e) {
     console.error('Erro ao consultar meus ingressos:', e);
-    return res.status(500).json({ error: 'Não foi possível carregar seus ingressos.' });
+    return res.status(500).json({ error: 'NÃ£o foi possÃ­vel carregar seus ingressos.' });
   }
 });
 
@@ -1345,7 +1345,7 @@ app.get('/api/tickets/qr/:ticketId.png', async (req, res) => {
     const ticketId = String(req.params.ticketId || '').trim();
 
     if (!/^BMD2-[A-F0-9]{10}$/i.test(ticketId)) {
-      return res.status(400).send('QR inválido.');
+      return res.status(400).send('QR invÃ¡lido.');
     }
 
     const r = await db(
@@ -1361,7 +1361,7 @@ app.get('/api/tickets/qr/:ticketId.png', async (req, res) => {
     const base64 = r.rows[0]?.qr_base64;
 
     if (!base64) {
-      return res.status(404).send('QR não encontrado.');
+      return res.status(404).send('QR nÃ£o encontrado.');
     }
 
     const buffer = Buffer.from(base64, 'base64');
@@ -1378,13 +1378,13 @@ app.get('/api/tickets/qr/:ticketId.png', async (req, res) => {
     console.error('Erro ao entregar QR:', e);
 
     return res.status(500).send(
-      'Não foi possível carregar o QR.'
+      'NÃ£o foi possÃ­vel carregar o QR.'
     );
   }
 });
 
 /* ========================================================
-   VALIDAÇÃO DO INGRESSO
+   VALIDAÃ‡ÃƒO DO INGRESSO
    ======================================================== */
 
 async function consumeTicketToken(rawToken) {
@@ -1395,7 +1395,7 @@ async function consumeTicketToken(rawToken) {
       status: 400,
       body: {
         valid: false,
-        error: 'QR Code inválido.'
+        error: 'QR Code invÃ¡lido.'
       }
     };
   }
@@ -1422,7 +1422,7 @@ async function consumeTicketToken(rawToken) {
       status: 404,
       body: {
         valid: false,
-        error: 'Ingresso não encontrado.'
+        error: 'Ingresso nÃ£o encontrado.'
       }
     };
   }
@@ -1432,7 +1432,7 @@ async function consumeTicketToken(rawToken) {
       status: 400,
       body: {
         valid: false,
-        error: 'Pagamento não aprovado.'
+        error: 'Pagamento nÃ£o aprovado.'
       }
     };
   }
@@ -1466,7 +1466,7 @@ async function consumeTicketToken(rawToken) {
       body: {
         valid: false,
         used: true,
-        error: 'Este ingresso já foi utilizado.',
+        error: 'Este ingresso jÃ¡ foi utilizado.',
         ticket: already
           ? {
               ticketId: already.ticket_id,
@@ -1503,11 +1503,11 @@ app.get('/api/tickets/scan', async (req, res) => {
 
     return res.status(result.status).json(result.body);
   } catch (e) {
-    console.error('Erro na validação pública:', e);
+    console.error('Erro na validaÃ§Ã£o pÃºblica:', e);
 
     return res.status(500).json({
       valid: false,
-      error: 'Não foi possível validar o ingresso.'
+      error: 'NÃ£o foi possÃ­vel validar o ingresso.'
     });
   }
 });
@@ -1524,13 +1524,13 @@ app.post('/api/tickets/validate', requireAdmin, async (req, res) => {
       valid: false,
       error:
         e.message ||
-        'Não foi possível validar o ingresso.'
+        'NÃ£o foi possÃ­vel validar o ingresso.'
     });
   }
 });
 
 /* ========================================================
-   HISTÓRICO DA PORTARIA
+   HISTÃ“RICO DA PORTARIA
    ======================================================== */
 
 app.get('/api/tickets/history', requireAdmin, async (req, res) => {
@@ -1565,8 +1565,8 @@ app.get('/api/tickets/history', requireAdmin, async (req, res) => {
 
     return res.json({ entries: r.rows, count: r.rows.length });
   } catch (e) {
-    console.error('Erro ao carregar histórico da portaria:', e);
-    return res.status(500).json({ error: e.message || 'Não foi possível carregar o histórico.' });
+    console.error('Erro ao carregar histÃ³rico da portaria:', e);
+    return res.status(500).json({ error: e.message || 'NÃ£o foi possÃ­vel carregar o histÃ³rico.' });
   }
 });
 
@@ -1580,13 +1580,13 @@ app.post('/api/tickets/resend/:orderId', requireAdmin, async (req, res) => {
 
     if (!order) {
       return res.status(404).json({
-        error: 'Compra não encontrada.'
+        error: 'Compra nÃ£o encontrada.'
       });
     }
 
     if (order.status !== 'approved') {
       return res.status(400).json({
-        error: 'Pagamento ainda não aprovado.'
+        error: 'Pagamento ainda nÃ£o aprovado.'
       });
     }
 
@@ -1600,42 +1600,42 @@ app.post('/api/tickets/resend/:orderId', requireAdmin, async (req, res) => {
     tickets = await getTickets(order.orderId);
 
     if (!gmailReady()) {
-      throw new Error('Gmail API não configurada.');
+      throw new Error('Gmail API nÃ£o configurada.');
     }
 
     await sendGmail({
       to: fresh.buyer.email,
-      subject: `Reenvio — ${EVENT_NAME}`,
+      subject: `Reenvio â€” ${EVENT_NAME}`,
       text:
-        `🔥 SEUS INGRESSOS ESTÃO DE VOLTA! 🔥\n\n` +
-        `Fala, ${fresh.buyer.name}! 😎\n\n` +
-        `Estamos reenviando seus ingressos para ${EVENT_NAME}. 🕺💃🔥\n\n` +
-        `🎟️ Os QR Codes estão anexados neste e-mail.\n` +
+        `ðŸ”¥ SEUS INGRESSOS ESTÃƒO DE VOLTA! ðŸ”¥\n\n` +
+        `Fala, ${fresh.buyer.name}! ðŸ˜Ž\n\n` +
+        `Estamos reenviando seus ingressos para ${EVENT_NAME}. ðŸ•ºðŸ’ƒðŸ”¥\n\n` +
+        `ðŸŽŸï¸ Os QR Codes estÃ£o anexados neste e-mail.\n` +
         `Guarde eles e apresente o QR Code correspondente na entrada.\n\n` +
-        `🔥 Prepare o look, chama a tropa e partiu baile!\n\n` +
-        `BAILE DA MADRID 2.0 🚀🔥\n` +
-        `Vai ser daquele jeito! 😈🎶\n\n` +
+        `ðŸ”¥ Prepare o look, chama a tropa e partiu baile!\n\n` +
+        `BAILE DA MADRID 2.0 ðŸš€ðŸ”¥\n` +
+        `Vai ser daquele jeito! ðŸ˜ˆðŸŽ¶\n\n` +
         `Pedido: ${fresh.orderId}\n\n` +
-        `Até o baile! 🥳🔥`,
+        `AtÃ© o baile! ðŸ¥³ðŸ”¥`,
       attachments: ticketAttachments(tickets),
       html: `
         <div style="margin:0;padding:0;background:#050505;font-family:Arial,sans-serif;color:#fff">
           <div style="width:100%;max-width:680px;margin:0 auto;padding:30px 20px 36px;background:#090909;color:#fff;text-align:center">
             <div style="padding:24px 16px;background:#111;border:1px solid rgba(255,255,255,.15);border-radius:18px">
-              <div style="font-size:25px;font-weight:900">🔥 SEUS INGRESSOS ESTÃO DE VOLTA! 🔥</div>
+              <div style="font-size:25px;font-weight:900">ðŸ”¥ SEUS INGRESSOS ESTÃƒO DE VOLTA! ðŸ”¥</div>
               <h1 style="margin:14px 0 8px;font-size:34px;line-height:1.15;color:#fff">${escapeHtml(EVENT_NAME)}</h1>
-              <p style="margin:0;color:#fff;font-size:18px;line-height:1.55">Fala, ${escapeHtml(fresh.buyer.name)}! 😎</p>
+              <p style="margin:0;color:#fff;font-size:18px;line-height:1.55">Fala, ${escapeHtml(fresh.buyer.name)}! ðŸ˜Ž</p>
             </div>
             ${tickets.map(ticketHtml).join('')}
             <div style="margin-top:18px;padding:22px 18px;background:#111;border-radius:16px;color:#fff;font-size:16px;line-height:1.65;text-align:left">
-              <p style="margin:0 0 14px"><strong>🎟️ Os QR Codes estão anexados neste e-mail.</strong></p>
+              <p style="margin:0 0 14px"><strong>ðŸŽŸï¸ Os QR Codes estÃ£o anexados neste e-mail.</strong></p>
               <p style="margin:0 0 14px">Guarde eles e apresente o QR Code correspondente na entrada.</p>
-              <p style="margin:0 0 14px">🔥 Prepare o look, chama a tropa e partiu baile!</p>
-              <p style="margin:0 0 14px;text-align:center;font-size:20px;font-weight:900">BAILE DA MADRID 2.0 🚀🔥</p>
-              <p style="margin:0 0 14px;text-align:center;font-size:18px;font-weight:800">Vai ser daquele jeito! 😈🎶</p>
+              <p style="margin:0 0 14px">ðŸ”¥ Prepare o look, chama a tropa e partiu baile!</p>
+              <p style="margin:0 0 14px;text-align:center;font-size:20px;font-weight:900">BAILE DA MADRID 2.0 ðŸš€ðŸ”¥</p>
+              <p style="margin:0 0 14px;text-align:center;font-size:18px;font-weight:800">Vai ser daquele jeito! ðŸ˜ˆðŸŽ¶</p>
               <p style="margin:0"><strong>Pedido:</strong> ${escapeHtml(fresh.orderId)}</p>
             </div>
-            <p style="margin:22px 0 0;color:#eee;font-size:14px">Até o baile! 🥳🔥</p>
+            <p style="margin:22px 0 0;color:#eee;font-size:14px">AtÃ© o baile! ðŸ¥³ðŸ”¥</p>
           </div>
         </div>
       `
@@ -1663,13 +1663,13 @@ app.post('/api/tickets/resend/:orderId', requireAdmin, async (req, res) => {
     res.status(500).json({
       error:
         e.message ||
-        'Não foi possível reenviar os ingressos.'
+        'NÃ£o foi possÃ­vel reenviar os ingressos.'
     });
   }
 });
 
 /* ========================================================
-   ESTATÍSTICAS
+   ESTATÃSTICAS
    ======================================================== */
 
 app.get('/api/tickets/stats', requireAdmin, async (req, res) => {
@@ -1738,19 +1738,19 @@ app.post('/api/admin/test-order', requireAdmin, async (req, res) => {
     if (!email) {
       return res.status(400).json({
         error:
-          'Informe o e-mail que receberá o ingresso de teste.'
+          'Informe o e-mail que receberÃ¡ o ingresso de teste.'
       });
     }
 
     if (!batches[batchId]) {
       return res.status(400).json({
-        error: 'Tipo de ingresso de teste inválido.'
+        error: 'Tipo de ingresso de teste invÃ¡lido.'
       });
     }
 
     if (cpf.length !== 11) {
       return res.status(400).json({
-        error: 'CPF de teste inválido.'
+        error: 'CPF de teste invÃ¡lido.'
       });
     }
 
@@ -1813,13 +1813,13 @@ app.post('/api/admin/test-order', requireAdmin, async (req, res) => {
     res.status(500).json({
       error:
         e.message ||
-        'Não foi possível criar a compra de teste.'
+        'NÃ£o foi possÃ­vel criar a compra de teste.'
     });
   }
 });
 
 /* ========================================================
-   TESTE ESPECÍFICO DE PIX
+   TESTE ESPECÃFICO DE PIX
    ======================================================== */
 
 app.post('/api/admin/test-pix-payment', requireAdmin, async (req, res) => {
@@ -1846,32 +1846,32 @@ app.post('/api/admin/test-pix-payment', requireAdmin, async (req, res) => {
 
     if (!email) {
       return res.status(400).json({
-        error: 'Informe o e-mail que receberá o teste PIX.'
+        error: 'Informe o e-mail que receberÃ¡ o teste PIX.'
       });
     }
 
     if (!batches[batchId]) {
       return res.status(400).json({
-        error: 'Tipo de ingresso PIX inválido.'
+        error: 'Tipo de ingresso PIX invÃ¡lido.'
       });
     }
 
     if (cpf.length !== 11) {
       return res.status(400).json({
-        error: 'CPF de teste inválido.'
+        error: 'CPF de teste invÃ¡lido.'
       });
     }
 
     if (phone.length !== 11) {
       return res.status(400).json({
-        error: 'Telefone de teste inválido.'
+        error: 'Telefone de teste invÃ¡lido.'
       });
     }
 
     /*
-      Este endpoint é propositalmente um TESTE ADMINISTRATIVO.
-      Ele não cria uma cobrança real no Mercado Pago e não movimenta dinheiro.
-      O objetivo é testar exatamente a etapa posterior ao PIX aprovado:
+      Este endpoint Ã© propositalmente um TESTE ADMINISTRATIVO.
+      Ele nÃ£o cria uma cobranÃ§a real no Mercado Pago e nÃ£o movimenta dinheiro.
+      O objetivo Ã© testar exatamente a etapa posterior ao PIX aprovado:
       pedido aprovado -> ingresso -> QR Code -> Gmail.
     */
 
@@ -1938,13 +1938,13 @@ app.post('/api/admin/test-pix-payment', requireAdmin, async (req, res) => {
     return res.status(500).json({
       error:
         e.message ||
-        'Não foi possível executar o teste de PIX.'
+        'NÃ£o foi possÃ­vel executar o teste de PIX.'
     });
   }
 });
 
 /* ========================================================
-   TESTE ESPECÍFICO DE CARTÃO
+   TESTE ESPECÃFICO DE CARTÃƒO
    ======================================================== */
 
 app.post('/api/admin/test-card-payment', requireAdmin, async (req, res) => {
@@ -1952,7 +1952,7 @@ app.post('/api/admin/test-card-payment', requireAdmin, async (req, res) => {
     const body = req.body || {};
 
     const name = String(
-      body.name || 'Cliente Teste Cartão'
+      body.name || 'Cliente Teste CartÃ£o'
     ).trim();
 
     const email = String(body.email || '').trim();
@@ -1972,13 +1972,13 @@ app.post('/api/admin/test-card-payment', requireAdmin, async (req, res) => {
     if (!email) {
       return res.status(400).json({
         error:
-          'Informe o e-mail que receberá o teste.'
+          'Informe o e-mail que receberÃ¡ o teste.'
       });
     }
 
     if (!batches[batchId]) {
       return res.status(400).json({
-        error: 'Tipo de ingresso inválido.'
+        error: 'Tipo de ingresso invÃ¡lido.'
       });
     }
 
@@ -2037,12 +2037,12 @@ app.post('/api/admin/test-card-payment', requireAdmin, async (req, res) => {
       }))
     });
   } catch (e) {
-    console.error('Teste cartão:', e);
+    console.error('Teste cartÃ£o:', e);
 
     res.status(500).json({
       error:
         e.message ||
-        'Não foi possível executar o teste de cartão.'
+        'NÃ£o foi possÃ­vel executar o teste de cartÃ£o.'
     });
   }
 });
@@ -2071,7 +2071,7 @@ app.delete('/api/admin/test-orders', requireAdmin, async (req, res) => {
     res.status(500).json({
       error:
         e.message ||
-        'Não foi possível excluir as compras de teste.'
+        'NÃ£o foi possÃ­vel excluir as compras de teste.'
     });
   }
 });
