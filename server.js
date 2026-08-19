@@ -1,233 +1,167 @@
-const express = require('express');
-const path = require('path');
-const fs = require('fs');
-const sharp = require('sharp');
-const crypto = require('crypto');
-const QRCode = require('qrcode');
-const { Pool } = require('pg');
-const { google } = require('googleapis');
+const express = require(‘express’); const path = require(‘path’); const
+fs = require(‘fs’); const sharp = require(‘sharp’); const crypto =
+require(‘crypto’); const QRCode = require(‘qrcode’); const { Pool } =
+require(‘pg’); const { google } = require(‘googleapis’);
 
 const app = express();
 
-app.use(express.json({ limit: '100kb' }));
+app.use(express.json({ limit: ‘100kb’ }));
 app.use(express.static(path.join(__dirname)));
 
 const PORT = process.env.PORT || 3000;
 
-const ACCESS_TOKEN = process.env.MP_ACCESS_TOKEN || '';
-const PUBLIC_KEY = process.env.MP_PUBLIC_KEY || '';
-const PUBLIC_BASE_URL = (process.env.PUBLIC_BASE_URL || '').replace(/\/$/, '');
-const ADMIN_TOKEN = process.env.ADMIN_TOKEN || '';
+const ACCESS_TOKEN = process.env.MP_ACCESS_TOKEN || ’‘; const PUBLIC_KEY
+= process.env.MP_PUBLIC_KEY ||’‘; const PUBLIC_BASE_URL =
+(process.env.PUBLIC_BASE_URL ||’‘).replace(//$/,’‘); const ADMIN_TOKEN =
+process.env.ADMIN_TOKEN ||’’;
 
-const GMAIL_CLIENT_ID = process.env.GMAIL_CLIENT_ID || '';
-const GMAIL_CLIENT_SECRET = process.env.GMAIL_CLIENT_SECRET || '';
-const GMAIL_REDIRECT_URI = process.env.GMAIL_REDIRECT_URI || '';
-const GMAIL_USER = process.env.GMAIL_USER || '';
-const GMAIL_REFRESH_TOKEN = process.env.GMAIL_REFRESH_TOKEN || '';
+const GMAIL_CLIENT_ID = process.env.GMAIL_CLIENT_ID || ’‘; const
+GMAIL_CLIENT_SECRET = process.env.GMAIL_CLIENT_SECRET ||’‘; const
+GMAIL_REDIRECT_URI = process.env.GMAIL_REDIRECT_URI ||’‘; const
+GMAIL_USER = process.env.GMAIL_USER ||’‘; const GMAIL_REFRESH_TOKEN =
+process.env.GMAIL_REFRESH_TOKEN ||’’;
 
-const EVENT_NAME = 'Baile da Madrid 2.0';
-const POSTER_PATH = path.join(__dirname, 'baile-madrid-poster.png');
+const EVENT_NAME = ‘Baile da Madrid 2.0’; const POSTER_PATH =
+path.join(__dirname, ‘baile-madrid-poster.png’);
 
-const batches = {
-  // Pré-venda e VIP são unissex.
-  pre: { name: 'Pré-Venda', price: 15 },
-  lounge: { name: 'Área VIP', price: 70 },
+const batches = { // Pré-venda e VIP são unissex. pre: { name:
+‘Pré-Venda’, price: 15 }, lounge: { name: ‘Área VIP’, price: 70 },
 
-  // A partir do 1º lote, o ingresso masculino custa R$ 5 a mais.
-  'lote1-feminino': { name: '1º Lote — Feminino', price: 20 },
-  'lote1-masculino': { name: '1º Lote — Masculino', price: 25 },
-  'lote2-feminino': { name: '2º Lote — Feminino', price: 25 },
-  'lote2-masculino': { name: '2º Lote — Masculino', price: 30 },
-  'lote3-feminino': { name: '3º Lote — Feminino', price: 30 },
-  'lote3-masculino': { name: '3º Lote — Masculino', price: 35 },
+// A partir do 1º lote, o ingresso masculino custa R$ 5 a mais.
+‘lote1-feminino’: { name: ‘1º Lote — Feminino’, price: 20 },
+‘lote1-masculino’: { name: ‘1º Lote — Masculino’, price: 25 },
+‘lote2-feminino’: { name: ‘2º Lote — Feminino’, price: 25 },
+‘lote2-masculino’: { name: ‘2º Lote — Masculino’, price: 30 },
+‘lote3-feminino’: { name: ‘3º Lote — Feminino’, price: 30 },
+‘lote3-masculino’: { name: ‘3º Lote — Masculino’, price: 35 },
 
-  // IDs antigos continuam apontando para a opção feminina correspondente.
-  lote1: { name: '1º Lote — Feminino', price: 20 },
-  lote2: { name: '2º Lote — Feminino', price: 25 },
-  lote3: { name: '3º Lote — Feminino', price: 30 }
-};
+// IDs antigos continuam apontando para a opção feminina correspondente.
+lote1: { name: ‘1º Lote — Feminino’, price: 20 }, lote2: { name: ‘2º
+Lote — Feminino’, price: 25 }, lote3: { name: ‘3º Lote — Feminino’,
+price: 30 } };
 
-/* ========================================================
-   GMAIL API / OAUTH2
-   ======================================================== */
+/* ======================================================== GMAIL API /
+OAUTH2 ======================================================== */
 
-function gmailReady() {
-  return Boolean(
-    GMAIL_CLIENT_ID &&
-    GMAIL_CLIENT_SECRET &&
-    GMAIL_REDIRECT_URI &&
-    GMAIL_USER &&
-    GMAIL_REFRESH_TOKEN
-  );
-}
+function gmailReady() { return Boolean( GMAIL_CLIENT_ID &&
+GMAIL_CLIENT_SECRET && GMAIL_REDIRECT_URI && GMAIL_USER &&
+GMAIL_REFRESH_TOKEN ); }
 
-function getGmailClient() {
-  if (!GMAIL_CLIENT_ID || !GMAIL_CLIENT_SECRET || !GMAIL_REDIRECT_URI) {
-    throw new Error('Credenciais da Gmail API não configuradas.');
-  }
+function getGmailClient() { if (!GMAIL_CLIENT_ID || !GMAIL_CLIENT_SECRET
+|| !GMAIL_REDIRECT_URI) { throw new Error(‘Credenciais da Gmail API não
+configuradas.’); }
 
-  const oauth2Client = new google.auth.OAuth2(
-    GMAIL_CLIENT_ID,
-    GMAIL_CLIENT_SECRET,
-    GMAIL_REDIRECT_URI
-  );
+const oauth2Client = new google.auth.OAuth2( GMAIL_CLIENT_ID,
+GMAIL_CLIENT_SECRET, GMAIL_REDIRECT_URI );
 
-  if (GMAIL_REFRESH_TOKEN) {
-    oauth2Client.setCredentials({
-      refresh_token: GMAIL_REFRESH_TOKEN
-    });
-  }
+if (GMAIL_REFRESH_TOKEN) { oauth2Client.setCredentials({ refresh_token:
+GMAIL_REFRESH_TOKEN }); }
 
-  return oauth2Client;
-}
+return oauth2Client; }
 
-function getGmailService() {
-  return google.gmail({
-    version: 'v1',
-    auth: getGmailClient()
-  });
-}
+function getGmailService() { return google.gmail({ version: ‘v1’, auth:
+getGmailClient() }); }
 
-function base64UrlEncode(str) {
-  return Buffer.from(str, 'utf8')
-    .toString('base64')
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/, '');
-}
+function base64UrlEncode(str) { return Buffer.from(str, ‘utf8’)
+.toString(‘base64’) .replace(/+/g, ‘-’) .replace(///g, ’_‘)
+.replace(/=+$/,’’); }
 
-function createMimeMessage({ from, to, subject, text, html, attachments = [], inlineAttachments = [] }) {
-  const mixedBoundary = `mixed_${crypto.randomBytes(12).toString('hex')}`;
-  const relatedBoundary = `related_${crypto.randomBytes(12).toString('hex')}`;
-  const alternativeBoundary = `alternative_${crypto.randomBytes(12).toString('hex')}`;
+function createMimeMessage({ from, to, subject, text, html, attachments
+= [], inlineAttachments = [] }) { const mixedBoundary =
+mixed_${crypto.randomBytes(12).toString('hex')}; const relatedBoundary =
+related_${crypto.randomBytes(12).toString('hex')}; const
+alternativeBoundary =
+alternative_${crypto.randomBytes(12).toString('hex')};
 
-  let message = '';
+let message = ’’;
 
-  message += `From: ${from}\r\n`;
-  message += `To: ${to}\r\n`;
-  message += `Subject: ${subject}\r\n`;
-  message += `MIME-Version: 1.0\r\n`;
-  message += `Content-Type: multipart/mixed; boundary="${mixedBoundary}"\r\n`;
-  message += `\r\n`;
+message += From: ${from}\r\n; message += To: ${to}\r\n; message +=
+Subject: ${subject}\r\n; message += MIME-Version: 1.0\r\n; message +=
+Content-Type: multipart/mixed; boundary="${mixedBoundary}"\r\n; message
++= \r\n;
 
-  // Corpo + imagens CID usadas diretamente pelo HTML.
-  message += `--${mixedBoundary}\r\n`;
-  message += `Content-Type: multipart/related; boundary="${relatedBoundary}"\r\n`;
-  message += `\r\n`;
+// Corpo + imagens CID usadas diretamente pelo HTML. message +=
+--${mixedBoundary}\r\n; message +=
+Content-Type: multipart/related; boundary="${relatedBoundary}"\r\n;
+message += \r\n;
 
-  message += `--${relatedBoundary}\r\n`;
-  message += `Content-Type: multipart/alternative; boundary="${alternativeBoundary}"\r\n`;
-  message += `\r\n`;
+message += --${relatedBoundary}\r\n; message +=
+Content-Type: multipart/alternative; boundary="${alternativeBoundary}"\r\n;
+message += \r\n;
 
-  message += `--${alternativeBoundary}\r\n`;
-  message += `Content-Type: text/plain; charset="UTF-8"\r\n`;
-  message += `Content-Transfer-Encoding: 8bit\r\n`;
-  message += `\r\n`;
-  message += `${text || ''}\r\n\r\n`;
+message += --${alternativeBoundary}\r\n; message +=
+Content-Type: text/plain; charset="UTF-8"\r\n; message +=
+Content-Transfer-Encoding: 8bit\r\n; message += \r\n; message +=
+${text || ''}\r\n\r\n;
 
-  message += `--${alternativeBoundary}\r\n`;
-  message += `Content-Type: text/html; charset="UTF-8"\r\n`;
-  message += `Content-Transfer-Encoding: 8bit\r\n`;
-  message += `\r\n`;
-  message += `${html || ''}\r\n\r\n`;
+message += --${alternativeBoundary}\r\n; message +=
+Content-Type: text/html; charset="UTF-8"\r\n; message +=
+Content-Transfer-Encoding: 8bit\r\n; message += \r\n; message +=
+${html || ''}\r\n\r\n;
 
-  message += `--${alternativeBoundary}--\r\n`;
+message += --${alternativeBoundary}--\r\n;
 
-  for (const attachment of inlineAttachments) {
-    message += `--${relatedBoundary}\r\n`;
-    message += `Content-Type: ${attachment.contentType || 'application/octet-stream'}; name="${attachment.filename}"\r\n`;
-    message += `Content-Disposition: inline; filename="${attachment.filename}"\r\n`;
-    message += `Content-Transfer-Encoding: base64\r\n`;
-    if (attachment.contentId) {
-      message += `Content-ID: <${attachment.contentId}>\r\n`;
-    }
-    message += `\r\n`;
-    const content = Buffer.from(String(attachment.content || ''), 'base64').toString('base64');
-    for (let i = 0; i < content.length; i += 76) {
-      message += content.substring(i, i + 76) + '\r\n';
-    }
-    message += `\r\n`;
-  }
+for (const attachment of inlineAttachments) { message +=
+--${relatedBoundary}\r\n; message +=
+Content-Type: ${attachment.contentType || 'application/octet-stream'}; name="${attachment.filename}"\r\n;
+message +=
+Content-Disposition: inline; filename="${attachment.filename}"\r\n;
+message += Content-Transfer-Encoding: base64\r\n; if
+(attachment.contentId) { message +=
+Content-ID: <${attachment.contentId}>\r\n; } message += \r\n; const
+content = Buffer.from(String(attachment.content || ’‘),
+’base64’).toString(‘base64’); for (let i = 0; i < content.length; i +=
+76) { message += content.substring(i, i + 76) + ‘’; } message += \r\n; }
 
-  message += `--${relatedBoundary}--\r\n`;
+message += --${relatedBoundary}--\r\n;
 
-  // Anexos normais ficam fora do multipart/related.
-  for (const attachment of attachments) {
-    message += `--${mixedBoundary}\r\n`;
-    message += `Content-Type: ${attachment.contentType || 'application/octet-stream'}; name="${attachment.filename}"\r\n`;
-    message += `Content-Disposition: attachment; filename="${attachment.filename}"\r\n`;
-    message += `Content-Transfer-Encoding: base64\r\n`;
-    message += `\r\n`;
-    const content = Buffer.from(String(attachment.content || ''), 'base64').toString('base64');
-    for (let i = 0; i < content.length; i += 76) {
-      message += content.substring(i, i + 76) + '\r\n';
-    }
-    message += `\r\n`;
-  }
+// Anexos normais ficam fora do multipart/related. for (const attachment
+of attachments) { message += --${mixedBoundary}\r\n; message +=
+Content-Type: ${attachment.contentType || 'application/octet-stream'}; name="${attachment.filename}"\r\n;
+message +=
+Content-Disposition: attachment; filename="${attachment.filename}"\r\n;
+message += Content-Transfer-Encoding: base64\r\n; message += \r\n; const
+content = Buffer.from(String(attachment.content || ’‘),
+’base64’).toString(‘base64’); for (let i = 0; i < content.length; i +=
+76) { message += content.substring(i, i + 76) + ‘’; } message += \r\n; }
 
-  message += `--${mixedBoundary}--\r\n`;
-  return message;
-}
+message += --${mixedBoundary}--\r\n; return message; }
 
-async function sendGmail({ to, subject, text, html, attachments = [], inlineAttachments = [] }) {
-  if (!gmailReady()) {
-    throw new Error(
-      'Gmail API não está configurada. Verifique GMAIL_CLIENT_ID, ' +
-      'GMAIL_CLIENT_SECRET, GMAIL_REDIRECT_URI, GMAIL_USER e GMAIL_REFRESH_TOKEN.'
-    );
-  }
+async function sendGmail({ to, subject, text, html, attachments = [],
+inlineAttachments = [] }) { if (!gmailReady()) { throw new Error( ‘Gmail
+API não está configurada. Verifique GMAIL_CLIENT_ID,’ +
+‘GMAIL_CLIENT_SECRET, GMAIL_REDIRECT_URI, GMAIL_USER e
+GMAIL_REFRESH_TOKEN.’ ); }
 
-  const gmail = getGmailService();
+const gmail = getGmailService();
 
-  const mime = createMimeMessage({
-    from: GMAIL_USER,
-    to,
-    subject,
-    text,
-    html,
-    attachments,
-    inlineAttachments
-  });
+const mime = createMimeMessage({ from: GMAIL_USER, to, subject, text,
+html, attachments, inlineAttachments });
 
-  const result = await gmail.users.messages.send({
-    userId: 'me',
-    requestBody: {
-      raw: base64UrlEncode(mime)
-    }
-  });
+const result = await gmail.users.messages.send({ userId: ‘me’,
+requestBody: { raw: base64UrlEncode(mime) } });
 
-  return result.data;
-}
+return result.data; }
 
-/* ========================================================
-   AUTORIZAÇÃO GMAIL
-   ======================================================== */
+/* ======================================================== AUTORIZAÇÃO
+GMAIL ======================================================== */
 
-app.get('/api/gmail/auth', (req, res) => {
-  if (!GMAIL_CLIENT_ID || !GMAIL_CLIENT_SECRET || !GMAIL_REDIRECT_URI) {
-    return res.status(500).send(
-      'Configure GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET e GMAIL_REDIRECT_URI no Render.'
-    );
-  }
+app.get(‘/api/gmail/auth’, (req, res) => { if (!GMAIL_CLIENT_ID ||
+!GMAIL_CLIENT_SECRET || !GMAIL_REDIRECT_URI) { return
+res.status(500).send( ‘Configure GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET e
+GMAIL_REDIRECT_URI no Render.’ ); }
 
-  const oauth2Client = new google.auth.OAuth2(
-    GMAIL_CLIENT_ID,
-    GMAIL_CLIENT_SECRET,
-    GMAIL_REDIRECT_URI
-  );
+const oauth2Client = new google.auth.OAuth2( GMAIL_CLIENT_ID,
+GMAIL_CLIENT_SECRET, GMAIL_REDIRECT_URI );
 
-  const url = oauth2Client.generateAuthUrl({
-    access_type: 'offline',
-    prompt: 'consent',
-    scope: ['https://www.googleapis.com/auth/gmail.send']
-  });
-
-  res.redirect(url);
+const url = oauth2Client.generateAuthUrl({ access_type: ‘offline’,
+prompt: ‘consent’, scope: [‘https://www.googleapis.com/auth/gmail.send’]
 });
 
-app.get('/api/gmail/oauth2callback', async (req, res) => {
-  try {
-    const code = String(req.query.code || '').trim();
+res.redirect(url); });
+
+app.get(‘/api/gmail/oauth2callback’, async (req, res) => { try { const
+code = String(req.query.code || ’’).trim();
 
     if (!code) {
       return res.status(400).send('Código OAuth não recebido.');
@@ -271,121 +205,64 @@ app.get('/api/gmail/oauth2callback', async (req, res) => {
       </body>
       </html>
     `);
-  } catch (e) {
-    console.error('Erro OAuth Gmail:', e);
-    res.status(500).send(`Erro ao autorizar Gmail: ${e.message || e}`);
-  }
-});
 
-/* ========================================================
-   BANCO DE DADOS
-   ======================================================== */
+} catch (e) { console.error(‘Erro OAuth Gmail:’, e);
+res.status(500).send(Erro ao autorizar Gmail: ${e.message || e}); } });
 
-if (!process.env.DATABASE_URL) {
-  console.warn('DATABASE_URL não configurado.');
+/* ======================================================== BANCO DE
+DADOS ======================================================== */
+
+if (!process.env.DATABASE_URL) { console.warn(‘DATABASE_URL não
+configurado.’); }
+
+const pool = process.env.DATABASE_URL ? new Pool({ connectionString:
+process.env.DATABASE_URL, ssl: { rejectUnauthorized: false }, max: 5 })
+: null;
+
+async function db(query, params = []) { if (!pool) { throw new
+Error(‘DATABASE_URL não configurado.’); }
+
+return pool.query(query, params); }
+
+async function initDb() { if (!pool) return;
+
+await
+db(CREATE TABLE IF NOT EXISTS orders(       order_id TEXT PRIMARY KEY,       payment_id TEXT UNIQUE NOT NULL,       status TEXT NOT NULL,       total NUMERIC(10,2) NOT NULL,       buyer_name TEXT NOT NULL,       buyer_email TEXT NOT NULL,       buyer_cpf TEXT NOT NULL,       buyer_phone TEXT NOT NULL,       items JSONB NOT NULL,       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),       updated_at TIMESTAMPTZ,       email_sent_at TIMESTAMPTZ,       email_error TEXT     ));
+
+await
+db(CREATE TABLE IF NOT EXISTS tickets(       ticket_id TEXT PRIMARY KEY,       order_id TEXT NOT NULL REFERENCES orders(order_id) ON DELETE CASCADE,       token_hash TEXT UNIQUE NOT NULL,       batch_id TEXT NOT NULL,       batch_name TEXT NOT NULL,       unit_price NUMERIC(10,2) NOT NULL,       buyer_name TEXT NOT NULL,       buyer_email TEXT NOT NULL,       qr_base64 TEXT NOT NULL,       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),       used_at TIMESTAMPTZ     ));
+
+await
+db(CREATE INDEX IF NOT EXISTS idx_tickets_token_hash     ON tickets(token_hash));
+
+await
+db(CREATE INDEX IF NOT EXISTS idx_tickets_order_id     ON tickets(order_id));
+
+await
+db(CREATE INDEX IF NOT EXISTS idx_tickets_ticket_id     ON tickets(ticket_id));
 }
 
-const pool = process.env.DATABASE_URL
-  ? new Pool({
-      connectionString: process.env.DATABASE_URL,
-      ssl: { rejectUnauthorized: false },
-      max: 5
-    })
-  : null;
+/* ======================================================== AUXILIARES
+======================================================== */
 
-async function db(query, params = []) {
-  if (!pool) {
-    throw new Error('DATABASE_URL não configurado.');
-  }
+function cleanCPF(v) { return String(v || ’‘).replace(//g,’’); }
 
-  return pool.query(query, params);
-}
+function splitName(name) { const p = String(name ||
+’’).trim().split(/+/).filter(Boolean);
 
-async function initDb() {
-  if (!pool) return;
+return { first_name: p.shift() || ‘Cliente’, last_name: p.join(’ ‘) ||
+’Baile Madrid’ }; }
 
-  await db(`
-    CREATE TABLE IF NOT EXISTS orders(
-      order_id TEXT PRIMARY KEY,
-      payment_id TEXT UNIQUE NOT NULL,
-      status TEXT NOT NULL,
-      total NUMERIC(10,2) NOT NULL,
-      buyer_name TEXT NOT NULL,
-      buyer_email TEXT NOT NULL,
-      buyer_cpf TEXT NOT NULL,
-      buyer_phone TEXT NOT NULL,
-      items JSONB NOT NULL,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ,
-      email_sent_at TIMESTAMPTZ,
-      email_error TEXT
-    )
-  `);
+function calculateItems(items) { if (!Array.isArray(items) ||
+!items.length) { throw new Error(‘Nenhum ingresso selecionado.’); }
 
-  await db(`
-    CREATE TABLE IF NOT EXISTS tickets(
-      ticket_id TEXT PRIMARY KEY,
-      order_id TEXT NOT NULL REFERENCES orders(order_id) ON DELETE CASCADE,
-      token_hash TEXT UNIQUE NOT NULL,
-      batch_id TEXT NOT NULL,
-      batch_name TEXT NOT NULL,
-      unit_price NUMERIC(10,2) NOT NULL,
-      buyer_name TEXT NOT NULL,
-      buyer_email TEXT NOT NULL,
-      qr_base64 TEXT NOT NULL,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      used_at TIMESTAMPTZ
-    )
-  `);
+let total = 0; const normalized = [];
 
-  await db(`
-    CREATE INDEX IF NOT EXISTS idx_tickets_token_hash
-    ON tickets(token_hash)
-  `);
-
-  await db(`
-    CREATE INDEX IF NOT EXISTS idx_tickets_order_id
-    ON tickets(order_id)
-  `);
-
-  await db(`
-    CREATE INDEX IF NOT EXISTS idx_tickets_ticket_id
-    ON tickets(ticket_id)
-  `);
-}
-
-/* ========================================================
-   AUXILIARES
-   ======================================================== */
-
-function cleanCPF(v) {
-  return String(v || '').replace(/\D/g, '');
-}
-
-function splitName(name) {
-  const p = String(name || '').trim().split(/\s+/).filter(Boolean);
-
-  return {
-    first_name: p.shift() || 'Cliente',
-    last_name: p.join(' ') || 'Baile Madrid'
-  };
-}
-
-function calculateItems(items) {
-  if (!Array.isArray(items) || !items.length) {
-    throw new Error('Nenhum ingresso selecionado.');
-  }
-
-  let total = 0;
-  const normalized = [];
-
-  for (const item of items) {
-    // O front-end pode enviar o VIP como "vip", enquanto o servidor
-    // mantém esse ingresso cadastrado internamente como "lounge".
-    const rawId = String(item?.id || '').trim().toLowerCase();
-    const itemId = rawId === 'vip' ? 'lounge' : rawId;
-    const batch = batches[itemId];
-    const quantity = Number(item?.quantity);
+for (const item of items) { // O front-end pode enviar o VIP como “vip”,
+enquanto o servidor // mantém esse ingresso cadastrado internamente como
+“lounge”. const rawId = String(item?.id || ’‘).trim().toLowerCase();
+const itemId = rawId === ’vip’ ? ‘lounge’ : rawId; const batch =
+batches[itemId]; const quantity = Number(item?.quantity);
 
     if (
       !batch ||
@@ -404,238 +281,120 @@ function calculateItems(items) {
       quantity,
       unit_price: batch.price
     });
-  }
 
-  if (normalized.reduce((s, i) => s + i.quantity, 0) > 10) {
-    throw new Error('Limite máximo de 10 ingressos por compra.');
-  }
-
-  return { normalized, total };
 }
 
-function totalTicketCount(order) {
-  return (order.items || []).reduce(
-    (sum, item) => sum + Number(item.quantity || 0),
-    0
-  );
-}
+if (normalized.reduce((s, i) => s + i.quantity, 0) > 10) { throw new
+Error(‘Limite máximo de 10 ingressos por compra.’); }
 
-function makeTicketCode() {
-  return `BMD2-${crypto.randomBytes(5).toString('hex').toUpperCase()}`;
-}
+return { normalized, total }; }
 
-function makeTicketToken() {
-  return crypto.randomBytes(32).toString('base64url');
-}
+function totalTicketCount(order) { return (order.items || []).reduce(
+(sum, item) => sum + Number(item.quantity || 0), 0 ); }
 
-function hashToken(token) {
-  return crypto.createHash('sha256').update(token).digest('hex');
-}
+function makeTicketCode() { return
+BMD2-${crypto.randomBytes(5).toString('hex').toUpperCase()}; }
 
-function requireAdmin(req, res, next) {
-  const supplied =
-    req.get('x-admin-token') ||
-    req.body?.adminToken ||
-    req.query?.adminToken ||
-    '';
+function makeTicketToken() { return
+crypto.randomBytes(32).toString(‘base64url’); }
 
-  if (!ADMIN_TOKEN) {
-    return res.status(503).json({
-      error: 'ADMIN_TOKEN não configurado no servidor.'
-    });
-  }
+function hashToken(token) { return
+crypto.createHash(‘sha256’).update(token).digest(‘hex’); }
 
-  if (supplied !== ADMIN_TOKEN) {
-    return res.status(401).json({
-      error: 'Acesso não autorizado.'
-    });
-  }
+function requireAdmin(req, res, next) { const supplied =
+req.get(‘x-admin-token’) || req.body?.adminToken ||
+req.query?.adminToken || ’’;
 
-  next();
-}
+if (!ADMIN_TOKEN) { return res.status(503).json({ error: ‘ADMIN_TOKEN
+não configurado no servidor.’ }); }
 
-async function getOrder(orderId) {
-  const r = await db(
-    `
-      SELECT
-        order_id AS "orderId",
-        payment_id AS "paymentId",
-        status,
-        total,
-        buyer_name AS "buyerName",
-        buyer_email AS "buyerEmail",
-        buyer_cpf AS "buyerCpf",
-        buyer_phone AS "buyerPhone",
-        items,
-        created_at AS "createdAt",
-        updated_at AS "updatedAt",
-        email_sent_at AS "emailSentAt",
-        email_error AS "emailError"
-      FROM orders
-      WHERE order_id = $1
-      LIMIT 1
-    `,
-    [orderId]
-  );
+if (supplied !== ADMIN_TOKEN) { return res.status(401).json({ error:
+‘Acesso não autorizado.’ }); }
 
-  if (!r.rows[0]) return null;
+next(); }
 
-  const row = r.rows[0];
+async function getOrder(orderId) { const r = await db(
+SELECT         order_id AS "orderId",         payment_id AS "paymentId",         status,         total,         buyer_name AS "buyerName",         buyer_email AS "buyerEmail",         buyer_cpf AS "buyerCpf",         buyer_phone AS "buyerPhone",         items,         created_at AS "createdAt",         updated_at AS "updatedAt",         email_sent_at AS "emailSentAt",         email_error AS "emailError"       FROM orders       WHERE order_id = $1       LIMIT 1,
+[orderId] );
 
-  row.buyer = {
-    name: row.buyerName,
-    email: row.buyerEmail,
-    cpf: row.buyerCpf,
-    phone: row.buyerPhone
-  };
+if (!r.rows[0]) return null;
 
-  return row;
-}
+const row = r.rows[0];
 
-async function getTickets(orderId) {
-  const r = await db(
-    `
-      SELECT
-        ticket_id,
-        order_id,
-        token_hash,
-        batch_id,
-        batch_name,
-        unit_price,
-        buyer_name,
-        buyer_email,
-        qr_base64,
-        created_at,
-        used_at
-      FROM tickets
-      WHERE order_id = $1
-      ORDER BY created_at ASC, ticket_id ASC
-    `,
-    [orderId]
-  );
+row.buyer = { name: row.buyerName, email: row.buyerEmail, cpf:
+row.buyerCpf, phone: row.buyerPhone };
 
-  return r.rows;
-}
+return row; }
 
-async function countTickets(orderId) {
-  const r = await db(
-    `SELECT COUNT(*)::int AS n FROM tickets WHERE order_id=$1`,
-    [orderId]
-  );
+async function getTickets(orderId) { const r = await db(
+SELECT         ticket_id,         order_id,         token_hash,         batch_id,         batch_name,         unit_price,         buyer_name,         buyer_email,         qr_base64,         created_at,         used_at       FROM tickets       WHERE order_id = $1       ORDER BY created_at ASC, ticket_id ASC,
+[orderId] );
 
-  return r.rows[0].n;
-}
+return r.rows; }
 
-async function mpRequest(url, options = {}) {
-  if (!ACCESS_TOKEN) {
-    throw new Error('MP_ACCESS_TOKEN não configurado.');
-  }
+async function countTickets(orderId) { const r = await db(
+SELECT COUNT(*)::int AS n FROM tickets WHERE order_id=$1, [orderId] );
 
-  const response = await fetch(url, {
-    ...options,
-    headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${ACCESS_TOKEN}`,
-      ...(options.headers || {})
-    }
-  });
+return r.rows[0].n; }
 
-  const text = await response.text();
+async function mpRequest(url, options = {}) { if (!ACCESS_TOKEN) { throw
+new Error(‘MP_ACCESS_TOKEN não configurado.’); }
 
-  let data;
-  try {
-    data = text ? JSON.parse(text) : {};
-  } catch {
-    data = { message: text };
-  }
+const response = await fetch(url, { …options, headers: { Accept:
+‘application/json’, ‘Content-Type’: ‘application/json’, Authorization:
+Bearer ${ACCESS_TOKEN}, …(options.headers || {}) } });
 
-  if (!response.ok) {
-    const message =
-      data?.message ||
-      data?.cause?.[0]?.description ||
-      `Mercado Pago respondeu HTTP ${response.status}.`;
+const text = await response.text();
+
+let data; try { data = text ? JSON.parse(text) : {}; } catch { data = {
+message: text }; }
+
+if (!response.ok) { const message = data?.message ||
+data?.cause?.[0]?.description ||
+Mercado Pago respondeu HTTP ${response.status}.;
 
     throw new Error(message);
-  }
 
-  return data;
 }
 
-function ticketPublicUrl(ticketId, token) {
-  const base =
-    PUBLIC_BASE_URL ||
-    '';
+return data; }
 
-  return `${base}/api/tickets/scan?ticket=${encodeURIComponent(token)}`;
+function ticketPublicUrl(ticketId, token) { const base = PUBLIC_BASE_URL
+|| ’’;
+
+return ${base}/api/tickets/scan?ticket=${encodeURIComponent(token)}; }
+
+function escapeHtml(value) { return String(value ?? ’‘)
+.replace(/&/g,’&‘) .replace(/</g,’<‘) .replace(/>/g,’>‘)
+.replace(/“/g,’"‘) .replace(/’/g, ’'’); }
+
+function ticketHtml(ticket) { const ticketId = ticket.ticket_id ||
+ticket.ticketId || ’‘; const buyerName = ticket.buyer_name ||
+ticket.buyerName ||’‘; const buyerCpf = ticket.buyer_cpf ||
+ticket.buyerCpf ||’‘; const batchName = ticket.batch_name ||
+ticket.batchName ||’’;
+
+return
+<div style="margin:0 auto 18px;padding:16px 18px;background:rgba(0,0,0,.78);border:1px solid rgba(255,255,255,.22);border-radius:14px;color:#fff;font-family:Arial,sans-serif;text-align:center">       <div style="font-size:11px;color:#ff4052;letter-spacing:2px;text-transform:uppercase;font-weight:800">         INGRESSO       </div>       <div style="font-size:18px;font-weight:800;margin:7px 0 12px">         ${escapeHtml(batchName)}       </div>       <p style="margin:6px 0;font-size:15px">         <strong>Nome: ${escapeHtml(buyerName)}</strong>       </p>       <p style="margin:6px 0;font-size:14px">         <strong>CPF: ${formatCpfDisplay(buyerCpf)}</strong>       </p>       <p style="margin:10px 0 0;font-family:monospace;font-size:13px;word-break:break-all">         Código: ${escapeHtml(ticketId)}       </p>       <p style="margin:10px 0 0;color:#ddd;font-size:11px">         O QR Code deste ingresso está anexado a este e-mail.       </p>     </div>;
 }
 
-function escapeHtml(value) {
-  return String(value ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
-}
+function formatCpfDisplay(value) { const d = String(value ||
+’‘).replace(//g,’‘); if (d.length !== 11) return escapeHtml(value
+||’—‘); return d.replace(/()()()()/,’$1.$2.$3-$4’); }
 
-function ticketHtml(ticket) {
-  const ticketId = ticket.ticket_id || ticket.ticketId || '';
-  const buyerName = ticket.buyer_name || ticket.buyerName || '';
-  const buyerCpf = ticket.buyer_cpf || ticket.buyerCpf || '';
-  const batchName = ticket.batch_name || ticket.batchName || '';
+function emailPosterInlineAttachment() { if
+(!fs.existsSync(POSTER_PATH)) { throw new
+Error(Imagem da festa não encontrada: ${POSTER_PATH}); }
 
-  return `
-    <div style="margin:0 auto 18px;padding:16px 18px;background:rgba(0,0,0,.78);border:1px solid rgba(255,255,255,.22);border-radius:14px;color:#fff;font-family:Arial,sans-serif;text-align:center">
-      <div style="font-size:11px;color:#ff4052;letter-spacing:2px;text-transform:uppercase;font-weight:800">
-        INGRESSO
-      </div>
-      <div style="font-size:18px;font-weight:800;margin:7px 0 12px">
-        ${escapeHtml(batchName)}
-      </div>
-      <p style="margin:6px 0;font-size:15px">
-        <strong>Nome: ${escapeHtml(buyerName)}</strong>
-      </p>
-      <p style="margin:6px 0;font-size:14px">
-        <strong>CPF: ${formatCpfDisplay(buyerCpf)}</strong>
-      </p>
-      <p style="margin:10px 0 0;font-family:monospace;font-size:13px;word-break:break-all">
-        Código: ${escapeHtml(ticketId)}
-      </p>
-      <p style="margin:10px 0 0;color:#ddd;font-size:11px">
-        O QR Code deste ingresso está anexado a este e-mail.
-      </p>
-    </div>
-  `;
-}
+const posterBase64 = fs .readFileSync(POSTER_PATH) .toString(‘base64’);
 
-function formatCpfDisplay(value) {
-  const d = String(value || '').replace(/\D/g, '');
-  if (d.length !== 11) return escapeHtml(value || '—');
-  return d.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
-}
+return { filename: ‘baile-da-madrid-background.png’, contentType:
+‘image/png’, content: posterBase64, contentId:
+‘baile-madrid-background@bailedamadrid’ }; }
 
-function emailPosterInlineAttachment() {
-  if (!fs.existsSync(POSTER_PATH)) {
-    throw new Error(`Imagem da festa não encontrada: ${POSTER_PATH}`);
-  }
-
-  const posterBase64 = fs
-    .readFileSync(POSTER_PATH)
-    .toString('base64');
-
-  return {
-    filename: 'baile-da-madrid-background.png',
-    contentType: 'image/png',
-    content: posterBase64,
-    contentId: 'baile-madrid-background@bailedamadrid'
-  };
-}
-
-function ticketAttachments(tickets) {
-  return tickets.map(t => {
-    const ticketId = t.ticket_id || t.ticketId || '';
-    const qrBase64 = t.qr_base64 || t.qrBase64 || '';
+function ticketAttachments(tickets) { return tickets.map(t => { const
+ticketId = t.ticket_id || t.ticketId || ’‘; const qrBase64 = t.qr_base64
+|| t.qrBase64 ||’’;
 
     if (!ticketId || !qrBase64) {
       throw new Error(`QR Code ausente para o ingresso ${ticketId || '(sem código)'}.`);
@@ -646,18 +405,17 @@ function ticketAttachments(tickets) {
       contentType: 'image/png',
       content: qrBase64
     };
-  });
-}
 
-/* ========================================================
-   GERAR INGRESSOS E ENVIAR E-MAIL
-   ======================================================== */
+}); }
 
-async function fulfillLocked(orderId) {
-  const client = await pool.connect();
+/* ======================================================== GERAR
+INGRESSOS E ENVIAR E-MAIL
+======================================================== */
 
-  try {
-    await client.query('BEGIN');
+async function fulfillLocked(orderId) { const client = await
+pool.connect();
+
+try { await client.query(‘BEGIN’);
 
     const orderResult = await client.query(
       `
@@ -857,29 +615,19 @@ async function fulfillLocked(orderId) {
     }
 
     return await getOrder(orderId);
-  } catch (e) {
-    try {
-      await client.query('ROLLBACK');
-    } catch {}
+
+} catch (e) { try { await client.query(‘ROLLBACK’); } catch {}
 
     throw e;
-  } finally {
-    client.release();
-  }
-}
 
-/* ========================================================
-   TESTE GMAIL
-   ======================================================== */
+} finally { client.release(); } }
 
-app.get('/api/admin/test-smtp', requireAdmin, async (req, res) => {
-  try {
-    if (!gmailReady()) {
-      return res.status(500).json({
-        ok: false,
-        error: 'Gmail API não configurada. Verifique as variáveis GMAIL_*.'
-      });
-    }
+/* ======================================================== TESTE GMAIL
+======================================================== */
+
+app.get(‘/api/admin/test-smtp’, requireAdmin, async (req, res) => { try
+{ if (!gmailReady()) { return res.status(500).json({ ok: false, error:
+’Gmail API não configurada. Verifique as variáveis GMAIL_*.’ }); }
 
     const to = String(req.query.to || '').trim();
 
@@ -913,23 +661,21 @@ app.get('/api/admin/test-smtp', requireAdmin, async (req, res) => {
       from: GMAIL_USER,
       to
     });
-  } catch (e) {
-    console.error('Erro no teste Gmail:', e);
+
+} catch (e) { console.error(‘Erro no teste Gmail:’, e);
 
     res.status(500).json({
       ok: false,
       error: e.message || 'Falha na Gmail API.'
     });
-  }
-});
 
-/* ========================================================
-   CRIAR PIX
-   ======================================================== */
+} });
 
-app.post('/api/create-pix', async (req, res) => {
-  try {
-    const { buyer, items } = req.body || {};
+/* ======================================================== CRIAR PIX
+======================================================== */
+
+app.post(‘/api/create-pix’, async (req, res) => { try { const { buyer,
+items } = req.body || {};
 
     const name = String(buyer?.name || '').trim();
     const email = String(buyer?.email || '').trim();
@@ -1028,29 +774,22 @@ app.post('/api/create-pix', async (req, res) => {
       qrCode: tx.qr_code,
       qrCodeBase64: tx.qr_code_base64
     });
-  } catch (e) {
-    console.error('Erro criar PIX:', e);
+
+} catch (e) { console.error(‘Erro criar PIX:’, e);
 
     res.status(400).json({
       error: e.message || 'Não foi possível gerar o PIX.'
     });
-  }
-});
 
-/* ========================================================
-   CRIAR PAGAMENTO COM CARTÃO
-   ======================================================== */
+} });
 
-app.post('/api/create-card-payment', async (req, res) => {
-  try {
-    const {
-      buyer,
-      items,
-      token,
-      paymentMethodId,
-      issuerId,
-      installments
-    } = req.body || {};
+/* ======================================================== CRIAR
+PAGAMENTO COM CARTÃO
+======================================================== */
+
+app.post(‘/api/create-card-payment’, async (req, res) => { try { const {
+buyer, items, token, paymentMethodId, issuerId, installments } =
+req.body || {};
 
     const name = String(buyer?.name || '').trim();
     const email = String(buyer?.email || '').trim();
@@ -1176,24 +915,22 @@ app.post('/api/create-card-payment', async (req, res) => {
       status: finalOrder?.status || payment.status,
       statusDetail: payment.status_detail || null
     });
-  } catch (e) {
-    console.error('Erro pagamento cartão:', e);
+
+} catch (e) { console.error(‘Erro pagamento cartão:’, e);
 
     res.status(400).json({
       error:
         e.message ||
         'Não foi possível processar o pagamento com cartão.'
     });
-  }
-});
 
-/* ========================================================
-   STATUS DO PAGAMENTO
-   ======================================================== */
+} });
 
-app.get('/api/payment-status/:orderId', async (req, res) => {
-  try {
-    const order = await getOrder(req.params.orderId);
+/* ======================================================== STATUS DO
+PAGAMENTO ======================================================== */
+
+app.get(‘/api/payment-status/:orderId’, async (req, res) => { try {
+const order = await getOrder(req.params.orderId);
 
     if (!order) {
       return res.status(404).json({
@@ -1234,29 +971,25 @@ app.get('/api/payment-status/:orderId', async (req, res) => {
       emailSent: Boolean(finalOrder.emailSentAt),
       emailError: finalOrder.emailError || null
     });
-  } catch (e) {
-    console.error('Erro status pagamento:', e);
+
+} catch (e) { console.error(‘Erro status pagamento:’, e);
 
     res.status(500).json({
       error:
         e.message ||
         'Não foi possível consultar o pagamento.'
     });
-  }
-});
 
-/* ========================================================
-   WEBHOOK MERCADO PAGO
-   ======================================================== */
+} });
 
-app.post('/api/mercadopago/webhook', async (req, res) => {
-  res.sendStatus(200);
+/* ======================================================== WEBHOOK
+MERCADO PAGO ======================================================== */
 
-  try {
-    const paymentId =
-      req.body?.data?.id ||
-      req.query?.id ||
-      req.body?.id;
+app.post(‘/api/mercadopago/webhook’, async (req, res) => {
+res.sendStatus(200);
+
+try { const paymentId = req.body?.data?.id || req.query?.id ||
+req.body?.id;
 
     if (!paymentId) return;
 
@@ -1282,18 +1015,15 @@ app.post('/api/mercadopago/webhook', async (req, res) => {
     if (payment.status === 'approved') {
       await fulfillLocked(orderId);
     }
-  } catch (e) {
-    console.error('Webhook Mercado Pago:', e);
-  }
-});
 
-/* ========================================================
-   MEUS INGRESSOS — CONSULTA DO CLIENTE
-   ======================================================== */
-app.get('/api/my-tickets', async (req, res) => {
-  try {
-    const email = String(req.query.email || '').trim().toLowerCase();
-    const cpf = String(req.query.cpf || '').replace(/\D/g, '');
+} catch (e) { console.error(‘Webhook Mercado Pago:’, e); } });
+
+/* ======================================================== MEUS
+INGRESSOS — CONSULTA DO CLIENTE
+======================================================== */
+app.get(‘/api/my-tickets’, async (req, res) => { try { const email =
+String(req.query.email || ’‘).trim().toLowerCase(); const cpf =
+String(req.query.cpf ||’‘).replace(//g,’’);
 
     if (!email || !email.includes('@') || cpf.length !== 11) {
       return res.status(400).json({ error: 'Informe o e-mail e o CPF usados na compra.' });
@@ -1330,19 +1060,16 @@ app.get('/api/my-tickets', async (req, res) => {
     }
 
     return res.json({ buyerName: orders.rows[0].buyer_name, tickets });
-  } catch (e) {
-    console.error('Erro ao consultar meus ingressos:', e);
-    return res.status(500).json({ error: 'Não foi possível carregar seus ingressos.' });
-  }
-});
 
-/* ========================================================
-   QR CODE DO INGRESSO
-   ======================================================== */
+} catch (e) { console.error(‘Erro ao consultar meus ingressos:’, e);
+return res.status(500).json({ error: ‘Não foi possível carregar seus
+ingressos.’ }); } });
 
-app.get('/api/tickets/qr/:ticketId.png', async (req, res) => {
-  try {
-    const ticketId = String(req.params.ticketId || '').trim();
+/* ======================================================== QR CODE DO
+INGRESSO ======================================================== */
+
+app.get(‘/api/tickets/qr/:ticketId.png’, async (req, res) => { try {
+const ticketId = String(req.params.ticketId || ’’).trim();
 
     if (!/^BMD2-[A-F0-9]{10}$/i.test(ticketId)) {
       return res.status(400).send('QR inválido.');
@@ -1374,90 +1101,45 @@ app.get('/api/tickets/qr/:ticketId.png', async (req, res) => {
     });
 
     return res.end(buffer);
-  } catch (e) {
-    console.error('Erro ao entregar QR:', e);
+
+} catch (e) { console.error(‘Erro ao entregar QR:’, e);
 
     return res.status(500).send(
       'Não foi possível carregar o QR.'
     );
-  }
-});
 
-/* ========================================================
-   VALIDAÇÃO DO INGRESSO
-   ======================================================== */
+} });
 
-async function consumeTicketToken(rawToken) {
-  const token = String(rawToken || '').trim();
+/* ======================================================== VALIDAÇÃO DO
+INGRESSO ======================================================== */
 
-  if (!token) {
-    return {
-      status: 400,
-      body: {
-        valid: false,
-        error: 'QR Code inválido.'
-      }
-    };
-  }
+async function consumeTicketToken(rawToken) { const token =
+String(rawToken || ’’).trim();
 
-  const h = hashToken(token);
+if (!token) { return { status: 400, body: { valid: false, error: ‘QR
+Code inválido.’ } }; }
 
-  const r = await db(
-    `
-      SELECT
-        t.*,
-        o.status AS order_status,
-        o.buyer_cpf AS buyer_cpf
-      FROM tickets t
-      JOIN orders o ON o.order_id=t.order_id
-      WHERE t.token_hash=$1
-    `,
-    [h]
-  );
+const h = hashToken(token);
 
-  const t = r.rows[0];
+const r = await db(
+SELECT         t.*,         o.status AS order_status,         o.buyer_cpf AS buyer_cpf       FROM tickets t       JOIN orders o ON o.order_id=t.order_id       WHERE t.token_hash=$1,
+[h] );
 
-  if (!t) {
-    return {
-      status: 404,
-      body: {
-        valid: false,
-        error: 'Ingresso não encontrado.'
-      }
-    };
-  }
+const t = r.rows[0];
 
-  if (t.order_status !== 'approved') {
-    return {
-      status: 400,
-      body: {
-        valid: false,
-        error: 'Pagamento não aprovado.'
-      }
-    };
-  }
+if (!t) { return { status: 404, body: { valid: false, error: ‘Ingresso
+não encontrado.’ } }; }
 
-  const used = await db(
-    `
-      UPDATE tickets
-      SET used_at=NOW()
-      WHERE ticket_id=$1
-        AND used_at IS NULL
-      RETURNING used_at
-    `,
-    [t.ticket_id]
-  );
+if (t.order_status !== ‘approved’) { return { status: 400, body: {
+valid: false, error: ‘Pagamento não aprovado.’ } }; }
 
-  if (!used.rows[0]) {
-    const fresh = await db(
-      `
-        SELECT t.ticket_id,t.batch_name,t.buyer_name,o.buyer_cpf,t.used_at
-        FROM tickets t
-        JOIN orders o ON o.order_id=t.order_id
-        WHERE t.ticket_id=$1
-      `,
-      [t.ticket_id]
-    );
+const used = await db(
+UPDATE tickets       SET used_at=NOW()       WHERE ticket_id=$1         AND used_at IS NULL       RETURNING used_at,
+[t.ticket_id] );
+
+if (!used.rows[0]) { const fresh = await db(
+SELECT t.ticket_id,t.batch_name,t.buyer_name,o.buyer_cpf,t.used_at         FROM tickets t         JOIN orders o ON o.order_id=t.order_id         WHERE t.ticket_id=$1,
+[t.ticket_id] );
 
     const already = fresh.rows[0];
 
@@ -1478,47 +1160,34 @@ async function consumeTicketToken(rawToken) {
           : undefined
       }
     };
-  }
 
-  return {
-    status: 200,
-    body: {
-      valid: true,
-      used: false,
-      message: 'Entrada liberada.',
-      ticket: {
-        ticketId: t.ticket_id,
-        batchName: t.batch_name,
-        buyerName: t.buyer_name,
-        buyerCpf: t.buyer_cpf,
-        usedAt: used.rows[0].used_at
-      }
-    }
-  };
 }
 
-app.get('/api/tickets/scan', async (req, res) => {
-  try {
-    const result = await consumeTicketToken(req.query.ticket);
+return { status: 200, body: { valid: true, used: false, message:
+‘Entrada liberada.’, ticket: { ticketId: t.ticket_id, batchName:
+t.batch_name, buyerName: t.buyer_name, buyerCpf: t.buyer_cpf, usedAt:
+used.rows[0].used_at } } }; }
+
+app.get(‘/api/tickets/scan’, async (req, res) => { try { const result =
+await consumeTicketToken(req.query.ticket);
 
     return res.status(result.status).json(result.body);
-  } catch (e) {
-    console.error('Erro na validação pública:', e);
+
+} catch (e) { console.error(‘Erro na validação pública:’, e);
 
     return res.status(500).json({
       valid: false,
       error: 'Não foi possível validar o ingresso.'
     });
-  }
-});
 
-app.post('/api/tickets/validate', requireAdmin, async (req, res) => {
-  try {
-    const result = await consumeTicketToken(req.body?.token);
+} });
+
+app.post(‘/api/tickets/validate’, requireAdmin, async (req, res) => {
+try { const result = await consumeTicketToken(req.body?.token);
 
     return res.status(result.status).json(result.body);
-  } catch (e) {
-    console.error('Erro ao validar ingresso:', e);
+
+} catch (e) { console.error(‘Erro ao validar ingresso:’, e);
 
     return res.status(500).json({
       valid: false,
@@ -1526,18 +1195,16 @@ app.post('/api/tickets/validate', requireAdmin, async (req, res) => {
         e.message ||
         'Não foi possível validar o ingresso.'
     });
-  }
-});
 
-/* ========================================================
-   HISTÓRICO DA PORTARIA
-   ======================================================== */
+} });
 
-app.get('/api/tickets/history', requireAdmin, async (req, res) => {
-  try {
-    const limitRaw = Number.parseInt(req.query.limit, 10);
-    const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 200) : 100;
-    const search = String(req.query.search || '').trim();
+/* ======================================================== HISTÓRICO DA
+PORTARIA ======================================================== */
+
+app.get(‘/api/tickets/history’, requireAdmin, async (req, res) => { try
+{ const limitRaw = Number.parseInt(req.query.limit, 10); const limit =
+Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 200) : 100;
+const search = String(req.query.search || ’’).trim();
 
     const r = await db(
       `
@@ -1564,19 +1231,16 @@ app.get('/api/tickets/history', requireAdmin, async (req, res) => {
     );
 
     return res.json({ entries: r.rows, count: r.rows.length });
-  } catch (e) {
-    console.error('Erro ao carregar histórico da portaria:', e);
-    return res.status(500).json({ error: e.message || 'Não foi possível carregar o histórico.' });
-  }
-});
 
-/* ========================================================
-   REENVIAR INGRESSO
-   ======================================================== */
+} catch (e) { console.error(‘Erro ao carregar histórico da portaria:’,
+e); return res.status(500).json({ error: e.message || ‘Não foi possível
+carregar o histórico.’ }); } });
 
-app.post('/api/tickets/resend/:orderId', requireAdmin, async (req, res) => {
-  try {
-    const order = await getOrder(req.params.orderId);
+/* ======================================================== REENVIAR
+INGRESSO ======================================================== */
+
+app.post(‘/api/tickets/resend/:orderId’, requireAdmin, async (req, res)
+=> { try { const order = await getOrder(req.params.orderId);
 
     if (!order) {
       return res.status(404).json({
@@ -1657,30 +1321,24 @@ app.post('/api/tickets/resend/:orderId', requireAdmin, async (req, res) => {
       ok: true,
       message: 'Ingressos reenviados.'
     });
-  } catch (e) {
-    console.error('Erro ao reenviar:', e);
+
+} catch (e) { console.error(‘Erro ao reenviar:’, e);
 
     res.status(500).json({
       error:
         e.message ||
         'Não foi possível reenviar os ingressos.'
     });
-  }
-});
 
-/* ========================================================
-   ESTATÍSTICAS
-   ======================================================== */
+} });
 
-app.get('/api/tickets/stats', requireAdmin, async (req, res) => {
-  try {
-    const a = await db(
-      `
-        SELECT COUNT(*)::int AS n
-        FROM orders
-        WHERE status='approved'
-      `
-    );
+/* ======================================================== ESTATÍSTICAS
+======================================================== */
+
+app.get(‘/api/tickets/stats’, requireAdmin, async (req, res) => { try {
+const a = await db(
+SELECT COUNT(*)::int AS n         FROM orders         WHERE status='approved'
+);
 
     const s = await db(
       `
@@ -1702,20 +1360,15 @@ app.get('/api/tickets/stats', requireAdmin, async (req, res) => {
       usedTickets: used,
       availableTickets: Math.max(0, sold - used)
     });
-  } catch (e) {
-    res.status(500).json({
-      error: e.message
-    });
-  }
-});
 
-/* ========================================================
-   PEDIDOS DO PAINEL ADMINISTRATIVO
-   ======================================================== */
+} catch (e) { res.status(500).json({ error: e.message }); } });
 
-app.get('/api/admin/orders', requireAdmin, async (req, res) => {
-  try {
-    const status = String(req.query.status || '').trim();
+/* ======================================================== PEDIDOS DO
+PAINEL ADMINISTRATIVO
+======================================================== */
+
+app.get(‘/api/admin/orders’, requireAdmin, async (req, res) => { try {
+const status = String(req.query.status || ’’).trim();
 
     const result = await db(
       status
@@ -1789,28 +1442,14 @@ app.get('/api/admin/orders', requireAdmin, async (req, res) => {
       ok: true,
       orders
     });
-  } catch (e) {
-    console.error('Erro listar pedidos administrativos:', e);
-    res.status(500).json({
-      error: e.message || 'Não foi possível carregar os compradores.'
-    });
-  }
-});
 
-app.get('/api/admin/sales-by-batch', requireAdmin, async (req, res) => {
-  try {
-    const result = await db(`
-      SELECT
-        t.batch_name AS "batchName",
-        COUNT(*)::int AS "soldTickets",
-        COALESCE(SUM(t.unit_price), 0)::numeric AS revenue,
-        COUNT(*) FILTER (WHERE t.used_at IS NOT NULL)::int AS "usedTickets"
-      FROM tickets t
-      INNER JOIN orders o ON o.order_id = t.order_id
-      WHERE o.status = 'approved'
-      GROUP BY t.batch_id, t.batch_name
-      ORDER BY MIN(t.created_at) ASC
-    `);
+} catch (e) { console.error(‘Erro listar pedidos administrativos:’, e);
+res.status(500).json({ error: e.message || ‘Não foi possível carregar os
+compradores.’ }); } });
+
+app.get(‘/api/admin/sales-by-batch’, requireAdmin, async (req, res) => {
+try { const result = await
+db(SELECT         t.batch_name AS "batchName",         COUNT(*)::int AS "soldTickets",         COALESCE(SUM(t.unit_price), 0)::numeric AS revenue,         COUNT(*) FILTER (WHERE t.used_at IS NOT NULL)::int AS "usedTickets"       FROM tickets t       INNER JOIN orders o ON o.order_id = t.order_id       WHERE o.status = 'approved'       GROUP BY t.batch_id, t.batch_name       ORDER BY MIN(t.created_at) ASC);
 
     res.json({
       ok: true,
@@ -1821,21 +1460,16 @@ app.get('/api/admin/sales-by-batch', requireAdmin, async (req, res) => {
         usedTickets: Number(row.usedTickets)
       }))
     });
-  } catch (e) {
-    console.error('Erro vendas por lote:', e);
-    res.status(500).json({
-      error: e.message || 'Não foi possível carregar as vendas por lote.'
-    });
-  }
-});
 
-/* ========================================================
-   COMPRA DE TESTE
-   ======================================================== */
+} catch (e) { console.error(‘Erro vendas por lote:’, e);
+res.status(500).json({ error: e.message || ‘Não foi possível carregar as
+vendas por lote.’ }); } });
 
-app.post('/api/admin/test-order', requireAdmin, async (req, res) => {
-  try {
-    const body = req.body || {};
+/* ======================================================== COMPRA DE
+TESTE ======================================================== */
+
+app.post(‘/api/admin/test-order’, requireAdmin, async (req, res) => {
+try { const body = req.body || {};
 
     const name = String(
       body.name || 'Cliente de Teste'
@@ -1927,24 +1561,23 @@ app.post('/api/admin/test-order', requireAdmin, async (req, res) => {
         usedAt: t.used_at
       }))
     });
-  } catch (e) {
-    console.error('Compra de teste:', e);
+
+} catch (e) { console.error(‘Compra de teste:’, e);
 
     res.status(500).json({
       error:
         e.message ||
         'Não foi possível criar a compra de teste.'
     });
-  }
-});
 
-/* ========================================================
-   TESTE ESPECÍFICO DE PIX
-   ======================================================== */
+} });
 
-app.post('/api/admin/test-pix-payment', requireAdmin, async (req, res) => {
-  try {
-    const body = req.body || {};
+/* ======================================================== TESTE
+ESPECÍFICO DE PIX
+======================================================== */
+
+app.post(‘/api/admin/test-pix-payment’, requireAdmin, async (req, res)
+=> { try { const body = req.body || {};
 
     const name = String(
       body.name || 'Cliente Teste PIX'
@@ -2052,24 +1685,23 @@ app.post('/api/admin/test-pix-payment', requireAdmin, async (req, res) => {
         usedAt: t.used_at
       }))
     });
-  } catch (e) {
-    console.error('Teste PIX:', e);
+
+} catch (e) { console.error(‘Teste PIX:’, e);
 
     return res.status(500).json({
       error:
         e.message ||
         'Não foi possível executar o teste de PIX.'
     });
-  }
-});
 
-/* ========================================================
-   TESTE ESPECÍFICO DE CARTÃO
-   ======================================================== */
+} });
 
-app.post('/api/admin/test-card-payment', requireAdmin, async (req, res) => {
-  try {
-    const body = req.body || {};
+/* ======================================================== TESTE
+ESPECÍFICO DE CARTÃO
+======================================================== */
+
+app.post(‘/api/admin/test-card-payment’, requireAdmin, async (req, res)
+=> { try { const body = req.body || {};
 
     const name = String(
       body.name || 'Cliente Teste Cartão'
@@ -2156,59 +1788,47 @@ app.post('/api/admin/test-card-payment', requireAdmin, async (req, res) => {
         usedAt: t.used_at
       }))
     });
-  } catch (e) {
-    console.error('Teste cartão:', e);
+
+} catch (e) { console.error(‘Teste cartão:’, e);
 
     res.status(500).json({
       error:
         e.message ||
         'Não foi possível executar o teste de cartão.'
     });
-  }
-});
 
-/* ========================================================
-   APAGAR COMPRAS DE TESTE
-   ======================================================== */
+} });
 
-app.delete('/api/admin/test-orders', requireAdmin, async (req, res) => {
-  try {
-    const result = await db(
-      `
-        DELETE FROM orders
-        WHERE order_id LIKE 'TEST-%'
-        RETURNING order_id
-      `
-    );
+/* ======================================================== APAGAR
+COMPRAS DE TESTE
+======================================================== */
+
+app.delete(‘/api/admin/test-orders’, requireAdmin, async (req, res) => {
+try { const result = await db(
+DELETE FROM orders         WHERE order_id LIKE 'TEST-%'         RETURNING order_id
+);
 
     res.json({
       ok: true,
       deleted: result.rowCount
     });
-  } catch (e) {
-    console.error('Excluir testes:', e);
+
+} catch (e) { console.error(‘Excluir testes:’, e);
 
     res.status(500).json({
       error:
         e.message ||
         'Não foi possível excluir as compras de teste.'
     });
-  }
-});
 
-/* ========================================================
-   HEALTH CHECK
-   ======================================================== */
+} });
 
-app.get('/health', async (req, res) => {
-  try {
-    if (!pool) {
-      return res.status(503).json({
-        ok: false,
-        database: false,
-        gmail: gmailReady()
-      });
-    }
+/* ======================================================== HEALTH CHECK
+======================================================== */
+
+app.get(‘/health’, async (req, res) => { try { if (!pool) { return
+res.status(503).json({ ok: false, database: false, gmail: gmailReady()
+}); }
 
     await db('SELECT 1');
 
@@ -2218,35 +1838,22 @@ app.get('/health', async (req, res) => {
       gmail: gmailReady(),
       mercadopago: Boolean(ACCESS_TOKEN)
     });
-  } catch (e) {
-    res.status(503).json({
-      ok: false,
-      database: false,
-      gmail: gmailReady(),
-      mercadopago: Boolean(ACCESS_TOKEN),
-      error: e.message
-    });
-  }
+
+} catch (e) { res.status(503).json({ ok: false, database: false, gmail:
+gmailReady(), mercadopago: Boolean(ACCESS_TOKEN), error: e.message }); }
 });
 
-/* ========================================================
-   ROTA FINAL
-   ======================================================== */
+/* ======================================================== ROTA FINAL
+======================================================== */
 
-app.get('/{*splat}', (req, res) => {
-  res.sendFile(path.join(__dirname, 'index.html'));
-});
+app.get(’/{*splat}’, (req, res) => { res.sendFile(path.join(__dirname,
+‘index.html’)); });
 
-/* ========================================================
-   INICIAR SERVIDOR
-   ======================================================== */
+/* ======================================================== INICIAR
+SERVIDOR ======================================================== */
 
-initDb()
-  .then(() => {
-    app.listen(PORT, '0.0.0.0', () => {
-      console.log(
-        `${EVENT_NAME} em http://0.0.0.0:${PORT}`
-      );
+initDb() .then(() => { app.listen(PORT, ‘0.0.0.0’, () => { console.log(
+${EVENT_NAME} em http://0.0.0.0:${PORT} );
 
       console.log('E-mail: Gmail API');
       console.log(`GMAIL_USER: ${GMAIL_USER}`);
@@ -2254,8 +1861,6 @@ initDb()
       console.log(`Mercado Pago configurado: ${Boolean(ACCESS_TOKEN)}`);
       console.log(`PostgreSQL configurado: ${Boolean(pool)}`);
     });
-  })
-  .catch(e => {
-    console.error('Falha ao inicializar banco:', e);
-    process.exit(1);
-  });
+
+}) .catch(e => { console.error(‘Falha ao inicializar banco:’, e);
+process.exit(1); });
