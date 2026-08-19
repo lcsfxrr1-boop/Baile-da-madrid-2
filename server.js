@@ -10,6 +10,54 @@ const { google } = require('googleapis');
 const app = express();
 
 app.use(express.json({ limit: '100kb' }));
+
+/*
+ * CONTADOR DE VISITANTES
+ * Conta visitantes únicos do site usando um cookie anônimo.
+ * O contador fica no PostgreSQL para não zerar quando o Render reinicia.
+ */
+function getVisitorId(req) {
+  const cookieHeader = String(req.headers.cookie || '');
+  const match = cookieHeader.match(/(?:^|;\s*)bmd_visitor_id=([^;]+)/);
+  return match ? decodeURIComponent(match[1]) : crypto.randomUUID();
+}
+
+function trackSiteVisitor(req, res, next) {
+  if (
+    req.method !== 'GET' ||
+    (req.path !== '/' && req.path !== '/index.html')
+  ) {
+    return next();
+  }
+
+  const existingCookie = String(req.headers.cookie || '')
+    .match(/(?:^|;\s*)bmd_visitor_id=([^;]+)/);
+
+  const visitorId = getVisitorId(req);
+
+  if (!existingCookie) {
+    res.setHeader(
+      'Set-Cookie',
+      `bmd_visitor_id=${encodeURIComponent(visitorId)}; Max-Age=31536000; Path=/; SameSite=Lax`
+    );
+  }
+
+  db(
+    `
+      INSERT INTO site_visitors(visitor_id, first_seen, last_seen)
+      VALUES($1, NOW(), NOW())
+      ON CONFLICT(visitor_id)
+      DO UPDATE SET last_seen = NOW()
+    `,
+    [visitorId]
+  ).catch(error => {
+    console.error('Erro ao registrar visitante:', error);
+  });
+
+  next();
+}
+
+app.use(trackSiteVisitor);
 app.use(express.static(path.join(__dirname)));
 
 const PORT = process.env.PORT || 3000;
@@ -351,6 +399,14 @@ async function initDb() {
   await db(`
     CREATE INDEX IF NOT EXISTS idx_tickets_ticket_id
     ON tickets(ticket_id)
+  `);
+
+  await db(`
+    CREATE TABLE IF NOT EXISTS site_visitors(
+      visitor_id TEXT PRIMARY KEY,
+      first_seen TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      last_seen TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
   `);
 }
 
@@ -1696,11 +1752,17 @@ app.get('/api/tickets/stats', requireAdmin, async (req, res) => {
     const sold = s.rows[0].n;
     const used = s.rows[0].used;
 
+    const visitors = await db(`
+      SELECT COUNT(*)::int AS n
+      FROM site_visitors
+    `);
+
     res.json({
       approvedOrders: a.rows[0].n,
       soldTickets: sold,
       usedTickets: used,
-      availableTickets: Math.max(0, sold - used)
+      availableTickets: Math.max(0, sold - used),
+      siteVisitors: visitors.rows[0].n
     });
   } catch (e) {
     res.status(500).json({
