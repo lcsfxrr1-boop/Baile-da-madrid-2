@@ -73,6 +73,10 @@ const GMAIL_REDIRECT_URI = process.env.GMAIL_REDIRECT_URI || '';
 const GMAIL_USER = process.env.GMAIL_USER || '';
 const GMAIL_REFRESH_TOKEN = process.env.GMAIL_REFRESH_TOKEN || '';
 
+const RESEND_API_KEY = process.env.RESEND_API_KEY || '';
+const EMAIL_FROM = process.env.EMAIL_FROM || 'ingresso@bailedamadrid.com.br';
+const EMAIL_FROM_NAME = process.env.EMAIL_FROM_NAME || 'Baile da Madrid';
+
 const EVENT_NAME = 'Baile da Madrid 2.0';
 const POSTER_PATH = path.join(__dirname, 'baile-madrid-poster.png');
 
@@ -100,40 +104,15 @@ const batches = {
    ======================================================== */
 
 function gmailReady() {
-  return Boolean(
-    GMAIL_CLIENT_ID &&
-    GMAIL_CLIENT_SECRET &&
-    GMAIL_REDIRECT_URI &&
-    GMAIL_USER &&
-    GMAIL_REFRESH_TOKEN
-  );
+  return Boolean(RESEND_API_KEY && EMAIL_FROM);
 }
 
 function getGmailClient() {
-  if (!GMAIL_CLIENT_ID || !GMAIL_CLIENT_SECRET || !GMAIL_REDIRECT_URI) {
-    throw new Error('Credenciais da Gmail API não configuradas.');
-  }
-
-  const oauth2Client = new google.auth.OAuth2(
-    GMAIL_CLIENT_ID,
-    GMAIL_CLIENT_SECRET,
-    GMAIL_REDIRECT_URI
-  );
-
-  if (GMAIL_REFRESH_TOKEN) {
-    oauth2Client.setCredentials({
-      refresh_token: GMAIL_REFRESH_TOKEN
-    });
-  }
-
-  return oauth2Client;
+  throw new Error('Envio de e-mail agora usa Resend; Gmail OAuth2 não é necessário.');
 }
 
 function getGmailService() {
-  return google.gmail({
-    version: 'v1',
-    auth: getGmailClient()
-  });
+  throw new Error('Envio de e-mail agora usa Resend; Gmail OAuth2 não é necessário.');
 }
 
 function base64UrlEncode(str) {
@@ -158,7 +137,6 @@ function createMimeMessage({ from, to, subject, text, html, attachments = [], in
   message += `Content-Type: multipart/mixed; boundary="${mixedBoundary}"\r\n`;
   message += `\r\n`;
 
-  // Corpo + imagens CID usadas diretamente pelo HTML.
   message += `--${mixedBoundary}\r\n`;
   message += `Content-Type: multipart/related; boundary="${relatedBoundary}"\r\n`;
   message += `\r\n`;
@@ -199,7 +177,6 @@ function createMimeMessage({ from, to, subject, text, html, attachments = [], in
 
   message += `--${relatedBoundary}--\r\n`;
 
-  // Anexos normais ficam fora do multipart/related.
   for (const attachment of attachments) {
     message += `--${mixedBoundary}\r\n`;
     message += `Content-Type: ${attachment.contentType || 'application/octet-stream'}; name="${attachment.filename}"\r\n`;
@@ -220,31 +197,43 @@ function createMimeMessage({ from, to, subject, text, html, attachments = [], in
 async function sendGmail({ to, subject, text, html, attachments = [], inlineAttachments = [] }) {
   if (!gmailReady()) {
     throw new Error(
-      'Gmail API não está configurada. Verifique GMAIL_CLIENT_ID, ' +
-      'GMAIL_CLIENT_SECRET, GMAIL_REDIRECT_URI, GMAIL_USER e GMAIL_REFRESH_TOKEN.'
+      'Resend não está configurado. Verifique RESEND_API_KEY e EMAIL_FROM no Render.'
     );
   }
 
-  const gmail = getGmailService();
+  const resendAttachments = [
+    ...attachments,
+    ...inlineAttachments
+  ].map(attachment => ({
+    filename: attachment.filename,
+    content: String(attachment.content || ''),
+    ...(attachment.contentId ? { content_id: attachment.contentId } : {})
+  }));
 
-  const mime = createMimeMessage({
-    from: GMAIL_USER,
-    to,
-    subject,
-    text,
-    html,
-    attachments,
-    inlineAttachments
+  const response = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${RESEND_API_KEY}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      from: `${EMAIL_FROM_NAME} <${EMAIL_FROM}>`,
+      to: [to],
+      subject,
+      text: text || '',
+      html: html || '',
+      ...(resendAttachments.length ? { attachments: resendAttachments } : {})
+    })
   });
 
-  const result = await gmail.users.messages.send({
-    userId: 'me',
-    requestBody: {
-      raw: base64UrlEncode(mime)
-    }
-  });
+  const data = await response.json().catch(() => ({}));
 
-  return result.data;
+  if (!response.ok) {
+    const message = data?.message || data?.error?.message || `Resend HTTP ${response.status}`;
+    throw new Error(message);
+  }
+
+  return data;
 }
 
 /* ========================================================
@@ -835,7 +824,7 @@ async function fulfillLocked(orderId) {
           SET email_error=$1, updated_at=NOW()
           WHERE order_id=$2
         `,
-        ['Gmail API não configurada.', orderId]
+        ['Resend não configurado.', orderId]
       );
 
       return await getOrder(orderId);
@@ -925,7 +914,7 @@ async function fulfillLocked(orderId) {
 }
 
 /* ========================================================
-   TESTE GMAIL
+   TESTE DE E-MAIL (RESEND)
    ======================================================== */
 
 app.get('/api/admin/test-smtp', requireAdmin, async (req, res) => {
@@ -933,7 +922,7 @@ app.get('/api/admin/test-smtp', requireAdmin, async (req, res) => {
     if (!gmailReady()) {
       return res.status(500).json({
         ok: false,
-        error: 'Gmail API não configurada. Verifique as variáveis GMAIL_*.'
+        error: 'Resend não configurado. Verifique RESEND_API_KEY e EMAIL_FROM.'
       });
     }
 
@@ -942,20 +931,20 @@ app.get('/api/admin/test-smtp', requireAdmin, async (req, res) => {
     if (!to) {
       return res.json({
         ok: true,
-        provider: 'Gmail API',
+        provider: 'Resend',
         message:
-          'Gmail API configurada. Informe ?to=EMAIL para enviar o teste.',
-        from: GMAIL_USER
+          'Resend configurado. Informe ?to=EMAIL para enviar o teste.',
+        from: EMAIL_FROM
       });
     }
 
     const info = await sendGmail({
       to,
       subject: `Teste de e-mail — ${EVENT_NAME}`,
-      text: 'Este é um teste da Gmail API.',
+      text: 'Este é um teste do Resend.',
       html: `
         <div style="font-family:Arial,sans-serif;padding:30px">
-          <h2>Gmail API funcionando!</h2>
+          <h2>Resend funcionando!</h2>
           <p>Este é um teste do sistema de e-mails do ${escapeHtml(EVENT_NAME)}.</p>
         </div>
       `
@@ -963,18 +952,18 @@ app.get('/api/admin/test-smtp', requireAdmin, async (req, res) => {
 
     res.json({
       ok: true,
-      provider: 'Gmail API',
+      provider: 'Resend',
       message: 'E-mail de teste enviado com sucesso.',
       id: info.id || null,
-      from: GMAIL_USER,
+      from: EMAIL_FROM,
       to
     });
   } catch (e) {
-    console.error('Erro no teste Gmail:', e);
+    console.error('Erro no teste Resend:', e);
 
     res.status(500).json({
       ok: false,
-      error: e.message || 'Falha na Gmail API.'
+      error: e.message || 'Falha no Resend.'
     });
   }
 });
@@ -1656,7 +1645,7 @@ app.post('/api/tickets/resend/:orderId', requireAdmin, async (req, res) => {
     tickets = await getTickets(order.orderId);
 
     if (!gmailReady()) {
-      throw new Error('Gmail API não configurada.');
+      throw new Error('Resend não configurado.');
     }
 
     await sendGmail({
@@ -2310,9 +2299,9 @@ initDb()
         `${EVENT_NAME} em http://0.0.0.0:${PORT}`
       );
 
-      console.log('E-mail: Gmail API');
-      console.log(`GMAIL_USER: ${GMAIL_USER}`);
-      console.log(`Gmail configurado: ${gmailReady()}`);
+      console.log('E-mail: Resend');
+      console.log(`EMAIL_FROM: ${EMAIL_FROM}`);
+      console.log(`Resend configurado: ${gmailReady()}`);
       console.log(`Mercado Pago configurado: ${Boolean(ACCESS_TOKEN)}`);
       console.log(`PostgreSQL configurado: ${Boolean(pool)}`);
     });
