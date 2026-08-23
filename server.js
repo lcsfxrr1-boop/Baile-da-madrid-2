@@ -80,6 +80,70 @@ const RESEND_API_KEY = env.RESEND_API_KEY || '';
 const EMAIL_FROM = env.EMAIL_FROM || 'ingresso@bailedamadrid.com.br';
 const EMAIL_FROM_NAME = env.EMAIL_FROM_NAME || 'Baile da Madrid';
 
+/* ========================================================
+   RESEND — E-MAILS DOS INGRESSOS
+   ======================================================== */
+
+function gmailReady() {
+  return Boolean(RESEND_API_KEY && EMAIL_FROM);
+}
+
+async function sendGmail({ to, subject, text, html, attachments = [] }) {
+  if (!RESEND_API_KEY) {
+    throw new Error('RESEND_API_KEY não configurado.');
+  }
+
+  if (!EMAIL_FROM) {
+    throw new Error('EMAIL_FROM não configurado.');
+  }
+
+  const payload = {
+    from: EMAIL_FROM_NAME
+      ? `${EMAIL_FROM_NAME} <${EMAIL_FROM}>`
+      : EMAIL_FROM,
+    to: [to],
+    subject,
+    text,
+    html
+  };
+
+  if (attachments?.length) {
+    payload.attachments = attachments.map(attachment => ({
+      filename: attachment.filename,
+      content: attachment.content
+    }));
+  }
+
+  const response = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${RESEND_API_KEY}`,
+      'Content-Type': 'application/json',
+      Accept: 'application/json'
+    },
+    body: JSON.stringify(payload)
+  });
+
+  const responseText = await response.text();
+
+  let data;
+  try {
+    data = responseText ? JSON.parse(responseText) : {};
+  } catch {
+    data = { message: responseText };
+  }
+
+  if (!response.ok) {
+    throw new Error(
+      data?.message ||
+      data?.name ||
+      `Resend respondeu HTTP ${response.status}.`
+    );
+  }
+
+  return data;
+}
+
 const EVENT_NAME = 'Baile da Madrid 2.0';
 
 const batches = {
