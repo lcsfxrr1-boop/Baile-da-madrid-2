@@ -1,15 +1,27 @@
-const express = require('express');
-const path = require('path');
-const fs = require('fs');
-const sharp = require('sharp');
-const crypto = require('crypto');
-const QRCode = require('qrcode');
-const { Pool } = require('pg');
-const { google } = require('googleapis');
+import { env } from 'cloudflare:workers';
+import { httpServerHandler } from 'cloudflare:node';
+import express from 'express';
+import * as crypto from 'node:crypto';
+import QRCode from 'qrcode';
+import { Client } from 'pg';
 
 const app = express();
 
 app.use(express.json({ limit: '100kb' }));
+
+app.use(async (req, res, next) => {
+  try {
+    if (!dbInitPromise) {
+      dbInitPromise = initDb();
+    }
+    await dbInitPromise;
+    next();
+  } catch (error) {
+    console.error('Falha ao inicializar banco:', error);
+    dbInitPromise = null;
+    res.status(503).json({ error: 'Banco de dados indisponível.' });
+  }
+});
 
 /*
  * CONTADOR DE VISITANTES
@@ -58,27 +70,17 @@ function trackSiteVisitor(req, res, next) {
 }
 
 app.use(trackSiteVisitor);
-app.use(express.static(path.join(__dirname)));
 
-const PORT = process.env.PORT || 3000;
+const ACCESS_TOKEN = env.MP_ACCESS_TOKEN || '';
+const PUBLIC_KEY = env.MP_PUBLIC_KEY || '';
+const PUBLIC_BASE_URL = String(env.PUBLIC_BASE_URL || '').replace(/\/$/, '');
+const ADMIN_TOKEN = env.ADMIN_TOKEN || '';
 
-const ACCESS_TOKEN = process.env.MP_ACCESS_TOKEN || '';
-const PUBLIC_KEY = process.env.MP_PUBLIC_KEY || '';
-const PUBLIC_BASE_URL = (process.env.PUBLIC_BASE_URL || '').replace(/\/$/, '');
-const ADMIN_TOKEN = process.env.ADMIN_TOKEN || '';
-
-const GMAIL_CLIENT_ID = process.env.GMAIL_CLIENT_ID || '';
-const GMAIL_CLIENT_SECRET = process.env.GMAIL_CLIENT_SECRET || '';
-const GMAIL_REDIRECT_URI = process.env.GMAIL_REDIRECT_URI || '';
-const GMAIL_USER = process.env.GMAIL_USER || '';
-const GMAIL_REFRESH_TOKEN = process.env.GMAIL_REFRESH_TOKEN || '';
-
-const RESEND_API_KEY = process.env.RESEND_API_KEY || '';
-const EMAIL_FROM = process.env.EMAIL_FROM || 'ingresso@bailedamadrid.com.br';
-const EMAIL_FROM_NAME = process.env.EMAIL_FROM_NAME || 'Baile da Madrid';
+const RESEND_API_KEY = env.RESEND_API_KEY || '';
+const EMAIL_FROM = env.EMAIL_FROM || 'ingresso@bailedamadrid.com.br';
+const EMAIL_FROM_NAME = env.EMAIL_FROM_NAME || 'Baile da Madrid';
 
 const EVENT_NAME = 'Baile da Madrid 2.0';
-const POSTER_PATH = path.join(__dirname, 'baile-madrid-poster.png');
 
 const batches = {
   // Pré-venda e VIP são unissex.
@@ -100,246 +102,31 @@ const batches = {
 };
 
 /* ========================================================
-   GMAIL API / OAUTH2
-   ======================================================== */
-
-function gmailReady() {
-  return Boolean(RESEND_API_KEY && EMAIL_FROM);
-}
-
-function getGmailClient() {
-  throw new Error('Envio de e-mail agora usa Resend; Gmail OAuth2 não é necessário.');
-}
-
-function getGmailService() {
-  throw new Error('Envio de e-mail agora usa Resend; Gmail OAuth2 não é necessário.');
-}
-
-function base64UrlEncode(str) {
-  return Buffer.from(str, 'utf8')
-    .toString('base64')
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/, '');
-}
-
-function createMimeMessage({ from, to, subject, text, html, attachments = [], inlineAttachments = [] }) {
-  const mixedBoundary = `mixed_${crypto.randomBytes(12).toString('hex')}`;
-  const relatedBoundary = `related_${crypto.randomBytes(12).toString('hex')}`;
-  const alternativeBoundary = `alternative_${crypto.randomBytes(12).toString('hex')}`;
-
-  let message = '';
-
-  message += `From: ${from}\r\n`;
-  message += `To: ${to}\r\n`;
-  message += `Subject: ${subject}\r\n`;
-  message += `MIME-Version: 1.0\r\n`;
-  message += `Content-Type: multipart/mixed; boundary="${mixedBoundary}"\r\n`;
-  message += `\r\n`;
-
-  message += `--${mixedBoundary}\r\n`;
-  message += `Content-Type: multipart/related; boundary="${relatedBoundary}"\r\n`;
-  message += `\r\n`;
-
-  message += `--${relatedBoundary}\r\n`;
-  message += `Content-Type: multipart/alternative; boundary="${alternativeBoundary}"\r\n`;
-  message += `\r\n`;
-
-  message += `--${alternativeBoundary}\r\n`;
-  message += `Content-Type: text/plain; charset="UTF-8"\r\n`;
-  message += `Content-Transfer-Encoding: 8bit\r\n`;
-  message += `\r\n`;
-  message += `${text || ''}\r\n\r\n`;
-
-  message += `--${alternativeBoundary}\r\n`;
-  message += `Content-Type: text/html; charset="UTF-8"\r\n`;
-  message += `Content-Transfer-Encoding: 8bit\r\n`;
-  message += `\r\n`;
-  message += `${html || ''}\r\n\r\n`;
-
-  message += `--${alternativeBoundary}--\r\n`;
-
-  for (const attachment of inlineAttachments) {
-    message += `--${relatedBoundary}\r\n`;
-    message += `Content-Type: ${attachment.contentType || 'application/octet-stream'}; name="${attachment.filename}"\r\n`;
-    message += `Content-Disposition: inline; filename="${attachment.filename}"\r\n`;
-    message += `Content-Transfer-Encoding: base64\r\n`;
-    if (attachment.contentId) {
-      message += `Content-ID: <${attachment.contentId}>\r\n`;
-    }
-    message += `\r\n`;
-    const content = Buffer.from(String(attachment.content || ''), 'base64').toString('base64');
-    for (let i = 0; i < content.length; i += 76) {
-      message += content.substring(i, i + 76) + '\r\n';
-    }
-    message += `\r\n`;
-  }
-
-  message += `--${relatedBoundary}--\r\n`;
-
-  for (const attachment of attachments) {
-    message += `--${mixedBoundary}\r\n`;
-    message += `Content-Type: ${attachment.contentType || 'application/octet-stream'}; name="${attachment.filename}"\r\n`;
-    message += `Content-Disposition: attachment; filename="${attachment.filename}"\r\n`;
-    message += `Content-Transfer-Encoding: base64\r\n`;
-    message += `\r\n`;
-    const content = Buffer.from(String(attachment.content || ''), 'base64').toString('base64');
-    for (let i = 0; i < content.length; i += 76) {
-      message += content.substring(i, i + 76) + '\r\n';
-    }
-    message += `\r\n`;
-  }
-
-  message += `--${mixedBoundary}--\r\n`;
-  return message;
-}
-
-async function sendGmail({ to, subject, text, html, attachments = [], inlineAttachments = [] }) {
-  if (!gmailReady()) {
-    throw new Error(
-      'Resend não está configurado. Verifique RESEND_API_KEY e EMAIL_FROM no Render.'
-    );
-  }
-
-  const resendAttachments = [
-    ...attachments,
-    ...inlineAttachments
-  ].map(attachment => ({
-    filename: attachment.filename,
-    content: String(attachment.content || ''),
-    ...(attachment.contentId ? { content_id: attachment.contentId } : {})
-  }));
-
-  const response = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${RESEND_API_KEY}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      from: `${EMAIL_FROM_NAME} <${EMAIL_FROM}>`,
-      to: [to],
-      subject,
-      text: text || '',
-      html: html || '',
-      ...(resendAttachments.length ? { attachments: resendAttachments } : {})
-    })
-  });
-
-  const data = await response.json().catch(() => ({}));
-
-  if (!response.ok) {
-    const message = data?.message || data?.error?.message || `Resend HTTP ${response.status}`;
-    throw new Error(message);
-  }
-
-  return data;
-}
-
-/* ========================================================
-   AUTORIZAÇÃO GMAIL
-   ======================================================== */
-
-app.get('/api/gmail/auth', (req, res) => {
-  if (!GMAIL_CLIENT_ID || !GMAIL_CLIENT_SECRET || !GMAIL_REDIRECT_URI) {
-    return res.status(500).send(
-      'Configure GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET e GMAIL_REDIRECT_URI no Render.'
-    );
-  }
-
-  const oauth2Client = new google.auth.OAuth2(
-    GMAIL_CLIENT_ID,
-    GMAIL_CLIENT_SECRET,
-    GMAIL_REDIRECT_URI
-  );
-
-  const url = oauth2Client.generateAuthUrl({
-    access_type: 'offline',
-    prompt: 'consent',
-    scope: ['https://www.googleapis.com/auth/gmail.send']
-  });
-
-  res.redirect(url);
-});
-
-app.get('/api/gmail/oauth2callback', async (req, res) => {
-  try {
-    const code = String(req.query.code || '').trim();
-
-    if (!code) {
-      return res.status(400).send('Código OAuth não recebido.');
-    }
-
-    const oauth2Client = new google.auth.OAuth2(
-      GMAIL_CLIENT_ID,
-      GMAIL_CLIENT_SECRET,
-      GMAIL_REDIRECT_URI
-    );
-
-    const { tokens } = await oauth2Client.getToken(code);
-
-    if (!tokens.refresh_token) {
-      return res.status(500).send(
-        'O Google não retornou um refresh token. Tente novamente usando /api/gmail/auth.'
-      );
-    }
-
-    res.send(`
-      <!doctype html>
-      <html lang="pt-BR">
-      <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width,initial-scale=1">
-        <title>Gmail autorizado</title>
-        <style>
-          body{margin:0;padding:40px 20px;background:#070707;color:#fff;font-family:Arial,sans-serif}
-          .box{max-width:700px;margin:auto;background:#111;border:1px solid #333;border-radius:16px;padding:25px}
-          code{display:block;word-break:break-all;background:#000;padding:15px;border-radius:10px;margin-top:15px}
-        </style>
-      </head>
-      <body>
-        <div class="box">
-          <h2>Gmail autorizado com sucesso!</h2>
-          <p>Copie o Refresh Token abaixo e coloque no Render como:</p>
-          <strong>GMAIL_REFRESH_TOKEN</strong>
-          <code>${String(tokens.refresh_token).replace(/</g, '&lt;')}</code>
-          <p>Depois de salvar a variável no Render, faça um novo deploy.</p>
-        </div>
-      </body>
-      </html>
-    `);
-  } catch (e) {
-    console.error('Erro OAuth Gmail:', e);
-    res.status(500).send(`Erro ao autorizar Gmail: ${e.message || e}`);
-  }
-});
-
-/* ========================================================
    BANCO DE DADOS
    ======================================================== */
 
-if (!process.env.DATABASE_URL) {
-  console.warn('DATABASE_URL não configurado.');
+let dbInitPromise = null;
+
+function dbClient() {
+  if (!env.HYPERDRIVE?.connectionString) {
+    throw new Error('Hyperdrive não configurado. Crie o binding HYPERDRIVE.');
+  }
+  const client = new Client({ connectionString: env.HYPERDRIVE.connectionString });
+  return client;
 }
 
-const pool = process.env.DATABASE_URL
-  ? new Pool({
-      connectionString: process.env.DATABASE_URL,
-      ssl: { rejectUnauthorized: false },
-      max: 5
-    })
-  : null;
-
 async function db(query, params = []) {
-  if (!pool) {
-    throw new Error('DATABASE_URL não configurado.');
+  const client = dbClient();
+  try {
+    await client.connect();
+    return await client.query(query, params);
+  } finally {
+    await client.end().catch(() => {});
   }
-
-  return pool.query(query, params);
 }
 
 async function initDb() {
-  if (!pool) return;
+  if (!env.HYPERDRIVE?.connectionString) throw new Error('HYPERDRIVE não configurado.');
 
   await db(`
     CREATE TABLE IF NOT EXISTS orders(
@@ -660,23 +447,6 @@ function formatCpfDisplay(value) {
   return d.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
 }
 
-function emailPosterInlineAttachment() {
-  if (!fs.existsSync(POSTER_PATH)) {
-    throw new Error(`Imagem da festa não encontrada: ${POSTER_PATH}`);
-  }
-
-  const posterBase64 = fs
-    .readFileSync(POSTER_PATH)
-    .toString('base64');
-
-  return {
-    filename: 'baile-da-madrid-background.png',
-    contentType: 'image/png',
-    content: posterBase64,
-    contentId: 'baile-madrid-background@bailedamadrid'
-  };
-}
-
 function ticketAttachments(tickets) {
   return tickets.map(t => {
     const ticketId = t.ticket_id || t.ticketId || '';
@@ -699,7 +469,8 @@ function ticketAttachments(tickets) {
    ======================================================== */
 
 async function fulfillLocked(orderId) {
-  const client = await pool.connect();
+  const client = dbClient();
+  await client.connect();
 
   try {
     await client.query('BEGIN');
@@ -909,7 +680,7 @@ async function fulfillLocked(orderId) {
 
     throw e;
   } finally {
-    client.release();
+    client.end().catch(() => {});
   }
 }
 
@@ -2253,21 +2024,14 @@ app.delete('/api/admin/test-orders', requireAdmin, async (req, res) => {
 
 app.get('/health', async (req, res) => {
   try {
-    if (!pool) {
-      return res.status(503).json({
-        ok: false,
-        database: false,
-        gmail: gmailReady()
-      });
-    }
-
     await db('SELECT 1');
 
     res.json({
       ok: true,
       database: true,
       gmail: gmailReady(),
-      mercadopago: Boolean(ACCESS_TOKEN)
+      mercadopago: Boolean(ACCESS_TOKEN),
+      hyperdrive: Boolean(env.HYPERDRIVE?.connectionString)
     });
   } catch (e) {
     res.status(503).json({
@@ -2281,32 +2045,38 @@ app.get('/health', async (req, res) => {
 });
 
 /* ========================================================
-   ROTA FINAL
+   PÁGINA PRINCIPAL — CLOUDFLARE ASSETS
    ======================================================== */
 
-app.get('/{*splat}', (req, res) => {
-  res.sendFile(path.join(__dirname, 'index.html'));
+app.get(['/', '/index.html'], async (req, res) => {
+  try {
+    const host = req.get('host') || 'localhost';
+    const response = await env.ASSETS.fetch(
+      new Request(`https://${host}/index.html`)
+    );
+    const html = await response.text();
+    return res.status(response.status).set(
+      'Content-Type',
+      response.headers.get('content-type') || 'text/html; charset=UTF-8'
+    ).send(html);
+  } catch (error) {
+    console.error('Erro ao servir index.html:', error);
+    return res.status(500).send('Não foi possível carregar o site.');
+  }
 });
 
 /* ========================================================
-   INICIAR SERVIDOR
+   FALLBACK DE API
    ======================================================== */
 
-initDb()
-  .then(() => {
-    app.listen(PORT, '0.0.0.0', () => {
-      console.log(
-        `${EVENT_NAME} em http://0.0.0.0:${PORT}`
-      );
+app.use((req, res) => {
+  res.status(404).json({ error: 'Rota não encontrada.' });
+});
 
-      console.log('E-mail: Resend');
-      console.log(`EMAIL_FROM: ${EMAIL_FROM}`);
-      console.log(`Resend configurado: ${gmailReady()}`);
-      console.log(`Mercado Pago configurado: ${Boolean(ACCESS_TOKEN)}`);
-      console.log(`PostgreSQL configurado: ${Boolean(pool)}`);
-    });
-  })
-  .catch(e => {
-    console.error('Falha ao inicializar banco:', e);
-    process.exit(1);
-  });
+/* ========================================================
+   INICIAR CLOUDFLARE WORKER
+   ======================================================== */
+
+app.listen(3000);
+
+export default httpServerHandler({ port: 3000 });
