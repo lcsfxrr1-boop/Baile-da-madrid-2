@@ -1,21 +1,19 @@
 {
-  "name": "baile-madrid-mercadopago",
-  "version": "3.1.0",
+  "name": "baile-da-madrid-2",
+  "version": "4.0.0",
   "private": true,
-  "description": "Baile da Madrid 2.0 — Mercado Pago, ingressos QR, Gmail API e PostgreSQL",
+  "type": "module",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
-  },
-  "engines": {
-    "node": ">=20 <25"
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
   },
   "dependencies": {
-    "dotenv": "^17.2.1",
     "express": "^5.1.0",
-    "googleapis": "^160.0.0",
     "pg": "^8.16.3",
-    "qrcode": "^1.5.4",
-    "sharp": "^0.34.3"
+    "qrcode": "^1.5.4"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
   }
 }
