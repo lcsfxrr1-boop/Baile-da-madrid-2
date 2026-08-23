@@ -2,7 +2,7 @@ import { env } from 'cloudflare:workers';
 import { httpServerHandler } from 'cloudflare:node';
 import express from 'express';
 import * as crypto from 'node:crypto';
-import QRCode from 'qrcode';
+import * as QRCode from 'qrcode';
 import { Client } from 'pg';
 
 const app = express();
