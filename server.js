@@ -459,10 +459,7 @@ async function mpRequest(url, options = {}) {
 }
 
 function ticketPublicUrl(ticketId, token) {
-  const base =
-    PUBLIC_BASE_URL ||
-    '';
-
+  const base = PUBLIC_BASE_URL || '';
   return `${base}/api/tickets/scan?ticket=${encodeURIComponent(token)}`;
 }
 
@@ -509,6 +506,45 @@ function formatCpfDisplay(value) {
   const d = String(value || '').replace(/\D/g, '');
   if (d.length !== 11) return escapeHtml(value || '—');
   return d.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
+}
+
+/* ========================================================
+   QR CODE — IMPORTAÇÃO E GERAÇÃO
+   ======================================================== */
+
+/*
+ * O pacote "qrcode" precisa estar instalado no projeto:
+ *
+ *   npm install qrcode
+ *
+ * O import acima:
+ *
+ *   import QRCode from 'qrcode';
+ *
+ * é mantido no início do servidor.
+ *
+ * Esta função gera o PNG real do QR Code a partir do token
+ * exclusivo do ingresso e devolve somente o Base64 do PNG.
+ */
+async function generateTicketQrBase64(ticketId, token) {
+  if (!ticketId || !token) {
+    throw new Error('Dados insuficientes para gerar o QR Code.');
+  }
+
+  const payload = ticketPublicUrl(ticketId, token);
+
+  const qrBuffer = await QRCode.toBuffer(payload, {
+    type: 'png',
+    width: 700,
+    margin: 2,
+    errorCorrectionLevel: 'M'
+  });
+
+  if (!qrBuffer || !qrBuffer.length) {
+    throw new Error(`Não foi possível gerar o QR Code do ingresso ${ticketId}.`);
+  }
+
+  return Buffer.from(qrBuffer).toString('base64');
 }
 
 function ticketAttachments(tickets) {
@@ -596,18 +632,14 @@ async function fulfillLocked(orderId) {
           const token = makeTicketToken();
           const tokenHash = hashToken(token);
 
-          const qrPayload = ticketPublicUrl(ticketId, token);
-
-          // Gera PNG diretamente no servidor, sem Canvas/browser.
-          // O método toBuffer() do pacote qrcode usa o renderer PNG.
-          const qrBuffer = await QRCode.toBuffer(qrPayload, {
-            type: 'png',
-            width: 700,
-            margin: 2,
-            errorCorrectionLevel: 'M'
-          });
-
-          const cleanBase64 = Buffer.from(qrBuffer).toString('base64');
+          /*
+           * Cada ingresso recebe:
+           * 1. um código único;
+           * 2. um token secreto;
+           * 3. um QR Code PNG real;
+           * 4. o PNG armazenado em Base64 no PostgreSQL.
+           */
+          const cleanBase64 = await generateTicketQrBase64(ticketId, token);
 
           await client.query(
             `
@@ -1401,7 +1433,7 @@ app.post('/api/tickets/validate', requireAdmin, async (req, res) => {
   } catch (e) {
     console.error('Erro ao validar ingresso:', e);
 
-    return res.status(500).json({
+    res.status(500).json({
       valid: false,
       error:
         e.message ||
