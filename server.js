@@ -2,7 +2,7 @@ import { env } from 'cloudflare:workers';
 import { httpServerHandler } from 'cloudflare:node';
 import express from 'express';
 import * as crypto from 'node:crypto';
-import QRCode from 'qrcode';
+import * as QRCode from 'qrcode/lib/server.js';
 import { Client } from 'pg';
 
 const app = express();
@@ -597,16 +597,23 @@ async function fulfillLocked(orderId) {
           const tokenHash = hashToken(token);
 
           const qrPayload = ticketPublicUrl(ticketId, token);
-          const qrBase64 = await QRCode.toDataURL(qrPayload, {
+
+          // Usa explicitamente a implementação SERVER do pacote qrcode.
+          // A importação padrão pode ser redirecionada para a versão de
+          // navegador pelo bundler do Cloudflare, causando:
+          // "You need to specify a canvas element".
+          const qrBuffer = await QRCode.toBuffer(qrPayload, {
+            type: 'png',
             width: 700,
             margin: 2,
             errorCorrectionLevel: 'M'
           });
 
-          const cleanBase64 = qrBase64.replace(
-            /^data:image\/png;base64,/,
-            ''
-          );
+          if (!qrBuffer || !qrBuffer.length) {
+            throw new Error(`Não foi possível gerar o QR Code do ingresso ${ticketId}.`);
+          }
+
+          const cleanBase64 = Buffer.from(qrBuffer).toString('base64');
 
           await client.query(
             `
