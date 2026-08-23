@@ -1,0 +1,17 @@
+{
+  "name": "baile-da-madrid-2",
+  "main": "server.js",
+  "compatibility_date": "2026-08-23",
+  "compatibility_flags": ["nodejs_compat"],
+
+  "assets": {
+    "directory": "./public"
+  },
+
+  "hyperdrive": [
+    {
+      "binding": "HYPERDRIVE",
+      "id": "40dc5521a4bc4feb86193d711c547b2e"
+    }
+  ]
+}
