@@ -672,6 +672,11 @@ async function fulfillLocked(orderId) {
       return await getOrder(orderId);
     }
 
+    // Marca localmente quando o Resend aceitou o envio.
+    // Isso evita falso aviso caso o envio seja concluído, mas a gravação
+    // do status no banco falhe ou demore.
+    let emailSentNow = false;
+
     if (!freshOrder.emailSentAt) {
       try {
         await sendGmail({
@@ -716,17 +721,25 @@ async function fulfillLocked(orderId) {
           `
         });
 
-        await db(
-          `
-            UPDATE orders
-            SET
-              email_sent_at=NOW(),
-              email_error=NULL,
-              updated_at=NOW()
-            WHERE order_id=$1
-          `,
-          [orderId]
-        );
+        // O Resend aceitou o e-mail. A partir daqui, falha ao persistir
+        // o status não deve transformar um envio bem-sucedido em aviso de erro.
+        emailSentNow = true;
+
+        try {
+          await db(
+            `
+              UPDATE orders
+              SET
+                email_sent_at=NOW(),
+                email_error=NULL,
+                updated_at=NOW()
+              WHERE order_id=$1
+            `,
+            [orderId]
+          );
+        } catch (persistError) {
+          console.error('E-mail enviado, mas não foi possível registrar o status:', persistError);
+        }
       } catch (emailError) {
         console.error('Erro ao enviar ingresso:', emailError);
 
@@ -743,7 +756,20 @@ async function fulfillLocked(orderId) {
       }
     }
 
-    return await getOrder(orderId);
+    const finalOrder = await getOrder(orderId);
+
+    if (finalOrder) {
+      finalOrder.emailSentNow = emailSentNow;
+    }
+
+    // Se o envio acabou de ocorrer, informa sucesso imediatamente mesmo que
+    // a coluna email_sent_at ainda não esteja refletindo esse envio.
+    if (emailSentNow && finalOrder) {
+      finalOrder.emailSentAt = finalOrder.emailSentAt || new Date();
+      finalOrder.emailError = null;
+    }
+
+    return finalOrder;
   } catch (e) {
     try {
       await client.query('ROLLBACK');
@@ -1118,7 +1144,7 @@ app.get('/api/payment-status/:orderId', async (req, res) => {
       paymentId: finalOrder.paymentId,
       ticketsReady:
         ticketCount === totalTicketCount(finalOrder),
-      emailSent: Boolean(finalOrder.emailSentAt),
+      emailSent: Boolean(finalOrder.emailSentAt || finalOrder.emailSentNow),
       emailError: finalOrder.emailError || null
     });
   } catch (e) {
@@ -1812,7 +1838,7 @@ app.post('/api/admin/test-order', requireAdmin, async (req, res) => {
       test: true,
       orderId,
       status: fulfilled.status,
-      emailSent: Boolean(fulfilled.emailSentAt),
+      emailSent: Boolean(fulfilled.emailSentAt || fulfilled.emailSentNow),
       emailError: fulfilled.emailError || null,
       tickets: tickets.map(t => ({
         ticketId: t.ticket_id,
@@ -1937,7 +1963,7 @@ app.post('/api/admin/test-pix-payment', requireAdmin, async (req, res) => {
       orderId,
       paymentId,
       status: fulfilled.status,
-      emailSent: Boolean(fulfilled.emailSentAt),
+      emailSent: Boolean(fulfilled.emailSentAt || fulfilled.emailSentNow),
       emailError: fulfilled.emailError || null,
       tickets: tickets.map(t => ({
         ticketId: t.ticket_id,
@@ -2041,7 +2067,7 @@ app.post('/api/admin/test-card-payment', requireAdmin, async (req, res) => {
       simulatedPayment: 'card',
       paymentStatus: 'approved',
       orderId,
-      emailSent: Boolean(fulfilled.emailSentAt),
+      emailSent: Boolean(fulfilled.emailSentAt || fulfilled.emailSentNow),
       emailError: fulfilled.emailError || null,
       tickets: tickets.map(t => ({
         ticketId: t.ticket_id,
