@@ -461,7 +461,7 @@ async function mpRequest(url, options = {}) {
 function ticketPublicUrl(ticketId, token) {
   const base =
     PUBLIC_BASE_URL ||
-    '';
+    'https://bailedamadrid.com.br';
 
   return `${base}/api/tickets/scan?ticket=${encodeURIComponent(token)}`;
 }
@@ -1300,18 +1300,26 @@ app.get('/api/tickets/qr/:ticketId.png', async (req, res) => {
    VALIDAÇÃO DO INGRESSO
    ======================================================== */
 
-async function consumeTicketToken(rawToken) {
-  const token = String(rawToken || '').trim();
+function normalizeTicketToken(rawToken) {
+  const value = String(rawToken || '').trim();
+  if (!value) return '';
 
-  if (!token) {
-    return {
-      status: 400,
-      body: {
-        valid: false,
-        error: 'QR Code inválido.'
-      }
-    };
-  }
+  // Aceita tanto o token puro quanto a URL completa do QR Code.
+  // Também aceita URL relativa, caso algum leitor de QR devolva
+  // somente /api/tickets/scan?ticket=...
+  try {
+    const url = new URL(value, 'https://bailedamadrid.com.br');
+    const ticket = url.searchParams.get('ticket');
+    if (ticket) return String(ticket).trim();
+  } catch {}
+
+  return value;
+}
+
+async function findTicketByToken(rawToken) {
+  const token = normalizeTicketToken(rawToken);
+
+  if (!token) return null;
 
   const h = hashToken(token);
 
@@ -1328,7 +1336,33 @@ async function consumeTicketToken(rawToken) {
     [h]
   );
 
-  const t = r.rows[0];
+  return r.rows[0] || null;
+}
+
+async function consumeTicketToken(rawToken) {
+  const token = normalizeTicketToken(rawToken);
+
+  if (!token) {
+    return {
+      status: 400,
+      body: {
+        valid: false,
+        error: 'QR Code inválido.'
+      }
+    };
+  }
+
+  if (!token) {
+    return {
+      status: 400,
+      body: {
+        valid: false,
+        error: 'QR Code inválido.'
+      }
+    };
+  }
+
+  const t = await findTicketByToken(token);
 
   if (!t) {
     return {
@@ -1412,9 +1446,34 @@ async function consumeTicketToken(rawToken) {
 
 app.get('/api/tickets/scan', async (req, res) => {
   try {
-    const result = await consumeTicketToken(req.query.ticket);
+    const t = await findTicketByToken(req.query.ticket);
 
-    return res.status(result.status).json(result.body);
+    if (!t) {
+      return res.status(404).json({
+        valid: false,
+        error: 'Ingresso não encontrado.'
+      });
+    }
+
+    if (t.order_status !== 'approved') {
+      return res.status(400).json({
+        valid: false,
+        error: 'Pagamento não aprovado.'
+      });
+    }
+
+    return res.status(200).json({
+      valid: true,
+      used: Boolean(t.used_at),
+      message: t.used_at ? 'Ingresso já utilizado.' : 'Ingresso válido.',
+      ticket: {
+        ticketId: t.ticket_id,
+        batchName: t.batch_name,
+        buyerName: t.buyer_name,
+        buyerCpf: t.buyer_cpf,
+        usedAt: t.used_at
+      }
+    });
   } catch (e) {
     console.error('Erro na validação pública:', e);
 
@@ -1592,6 +1651,7 @@ app.get('/api/tickets/stats', requireAdmin, async (req, res) => {
         SELECT COUNT(*)::int AS n
         FROM orders
         WHERE status='approved'
+          AND order_id NOT LIKE 'TEST-%'
       `
     );
 
@@ -1600,9 +1660,11 @@ app.get('/api/tickets/stats', requireAdmin, async (req, res) => {
         SELECT
           COUNT(*)::int AS n,
           COUNT(*) FILTER(
-            WHERE used_at IS NOT NULL
+            WHERE t.used_at IS NOT NULL
           )::int AS used
-        FROM tickets
+        FROM tickets t
+        JOIN orders o ON o.order_id=t.order_id
+        WHERE o.order_id NOT LIKE 'TEST-%'
       `
     );
 
@@ -1653,6 +1715,7 @@ app.get('/api/admin/orders', requireAdmin, async (req, res) => {
             updated_at AS "updatedAt"
           FROM orders
           WHERE status = $1
+            AND order_id NOT LIKE 'TEST-%'
           ORDER BY created_at DESC
         `
         : `
@@ -1669,6 +1732,7 @@ app.get('/api/admin/orders', requireAdmin, async (req, res) => {
             created_at AS "createdAt",
             updated_at AS "updatedAt"
           FROM orders
+          WHERE order_id NOT LIKE 'TEST-%'
           ORDER BY created_at DESC
         `,
       status ? [status] : []
@@ -1727,6 +1791,7 @@ app.get('/api/admin/sales-by-batch', requireAdmin, async (req, res) => {
       FROM tickets t
       INNER JOIN orders o ON o.order_id = t.order_id
       WHERE o.status = 'approved'
+        AND o.order_id NOT LIKE 'TEST-%'
       GROUP BY t.batch_id, t.batch_name
       ORDER BY MIN(t.created_at) ASC
     `);
