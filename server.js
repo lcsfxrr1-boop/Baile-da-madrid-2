@@ -521,8 +521,8 @@ function ticketAttachments(tickets) {
     }
 
     return {
-      filename: `qr-${ticketId}.svg`,
-      contentType: 'image/svg+xml',
+      filename: `qr-${ticketId}.png`,
+      contentType: 'image/png',
       content: qrBase64
     };
   });
@@ -598,16 +598,16 @@ async function fulfillLocked(orderId) {
 
           const qrPayload = ticketPublicUrl(ticketId, token);
 
-          // Cloudflare Workers não possui Canvas. Gere o QR como SVG,
-          // evitando QRCode.toDataURL(), que depende de canvas.
-          const qrSvg = await QRCode.toString(qrPayload, {
-            type: 'svg',
+          // Gera PNG diretamente no servidor, sem Canvas/browser.
+          // O método toBuffer() do pacote qrcode usa o renderer PNG.
+          const qrBuffer = await QRCode.toBuffer(qrPayload, {
+            type: 'png',
             width: 700,
             margin: 2,
             errorCorrectionLevel: 'M'
           });
 
-          const cleanBase64 = Buffer.from(qrSvg, 'utf8').toString('base64');
+          const cleanBase64 = Buffer.from(qrBuffer).toString('base64');
 
           await client.query(
             `
@@ -1248,7 +1248,7 @@ app.get('/api/tickets/qr/:ticketId.png', async (req, res) => {
     const buffer = Buffer.from(base64, 'base64');
 
     res.set({
-      'Content-Type': 'image/svg+xml; charset=utf-8',
+      'Content-Type': 'image/png',
       'Content-Length': String(buffer.length),
       'Cache-Control': 'public, max-age=31536000, immutable',
       'X-Content-Type-Options': 'nosniff'
