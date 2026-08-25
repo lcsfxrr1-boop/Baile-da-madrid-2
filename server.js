@@ -2228,6 +2228,45 @@ app.get(['/', '/index.html'], async (req, res) => {
 });
 
 /* ========================================================
+   PAINEL ADMINISTRATIVO — COMPATIBILIDADE DE ROTAS
+   ========================================================
+   O painel atual usa /admin.html, mas esta rota também permite
+   abrir o painel por /admin. O HTML continua vindo do Cloudflare
+   Assets, sem alterar o visual ou a lógica do painel.
+*/
+
+async function serveAssetPage(req, res, assetPath) {
+  try {
+    const host = req.get('host') || 'localhost';
+    const response = await env.ASSETS.fetch(
+      new Request(`https://${host}/${assetPath}`)
+    );
+
+    if (!response.ok) {
+      return res.status(response.status).send('Página não encontrada.');
+    }
+
+    const html = await response.text();
+
+    return res.status(200).set(
+      'Content-Type',
+      response.headers.get('content-type') || 'text/html; charset=UTF-8'
+    ).send(html);
+  } catch (error) {
+    console.error(`Erro ao servir ${assetPath}:`, error);
+    return res.status(500).send('Não foi possível carregar a página.');
+  }
+}
+
+app.get(['/admin', '/admin/'], async (req, res) => {
+  return serveAssetPage(req, res, 'admin.html');
+});
+
+app.get('/admin.html', async (req, res) => {
+  return serveAssetPage(req, res, 'admin.html');
+});
+
+/* ========================================================
    FALLBACK DE API
    ======================================================== */
 
