@@ -2,7 +2,7 @@ import { env } from 'cloudflare:workers';
 import { httpServerHandler } from 'cloudflare:node';
 import express from 'express';
 import * as crypto from 'node:crypto';
-import * as QRCode from 'qrcode/lib/server.js';
+import QRCode from 'qrcode';
 import { Client } from 'pg';
 
 const app = express();
@@ -26,7 +26,7 @@ app.use(async (req, res, next) => {
 /*
  * CONTADOR DE VISITANTES
  * Conta visitantes únicos do site usando um cookie anônimo.
- * O contador fica no PostgreSQL para não zerar quando o Render reinicia.
+ * O contador fica no PostgreSQL para não zerar quando o Worker reinicia.
  */
 function getVisitorId(req) {
   const cookieHeader = String(req.headers.cookie || '');
@@ -34,10 +34,17 @@ function getVisitorId(req) {
   return match ? decodeURIComponent(match[1]) : crypto.randomUUID();
 }
 
-function trackSiteVisitor(req, res, next) {
+async function trackSiteVisitor(req, res, next) {
+  // Registra somente acessos GET à página principal.
+  // Usamos originalUrl/url em vez de depender de req.path, pois o
+  // adaptador Express no Cloudflare pode não preencher req.path como esperado.
+  const requestPath = String(
+    req.originalUrl || req.url || '/'
+  ).split('?')[0];
+
   if (
     req.method !== 'GET' ||
-    (req.path !== '/' && req.path !== '/index.html')
+    (requestPath !== '/' && requestPath !== '/index.html')
   ) {
     return next();
   }
@@ -47,6 +54,8 @@ function trackSiteVisitor(req, res, next) {
 
   const visitorId = getVisitorId(req);
 
+  // Define o cookie antes de continuar para o navegador passar o mesmo
+  // identificador nas próximas visitas, evitando duplicação do visitante.
   if (!existingCookie) {
     res.setHeader(
       'Set-Cookie',
@@ -54,19 +63,25 @@ function trackSiteVisitor(req, res, next) {
     );
   }
 
-  db(
-    `
-      INSERT INTO site_visitors(visitor_id, first_seen, last_seen)
-      VALUES($1, NOW(), NOW())
-      ON CONFLICT(visitor_id)
-      DO UPDATE SET last_seen = NOW()
-    `,
-    [visitorId]
-  ).catch(error => {
+  try {
+    // IMPORTANTE: aguardamos a gravação no PostgreSQL antes de enviar a
+    // página. No Cloudflare Workers, deixar a Promise "solta" pode fazer
+    // a execução ser encerrada antes do INSERT terminar.
+    await db(
+      `
+        INSERT INTO site_visitors(visitor_id, first_seen, last_seen)
+        VALUES($1, NOW(), NOW())
+        ON CONFLICT(visitor_id)
+        DO UPDATE SET last_seen = NOW()
+      `,
+      [visitorId]
+    );
+  } catch (error) {
+    // Não derruba o site se o contador estiver temporariamente indisponível.
     console.error('Erro ao registrar visitante:', error);
-  });
+  }
 
-  next();
+  return next();
 }
 
 app.use(trackSiteVisitor);
@@ -79,70 +94,6 @@ const ADMIN_TOKEN = env.ADMIN_TOKEN || '';
 const RESEND_API_KEY = env.RESEND_API_KEY || '';
 const EMAIL_FROM = env.EMAIL_FROM || 'ingresso@bailedamadrid.com.br';
 const EMAIL_FROM_NAME = env.EMAIL_FROM_NAME || 'Baile da Madrid';
-
-/* ========================================================
-   RESEND — E-MAILS DOS INGRESSOS
-   ======================================================== */
-
-function gmailReady() {
-  return Boolean(RESEND_API_KEY && EMAIL_FROM);
-}
-
-async function sendGmail({ to, subject, text, html, attachments = [] }) {
-  if (!RESEND_API_KEY) {
-    throw new Error('RESEND_API_KEY não configurado.');
-  }
-
-  if (!EMAIL_FROM) {
-    throw new Error('EMAIL_FROM não configurado.');
-  }
-
-  const payload = {
-    from: EMAIL_FROM_NAME
-      ? `${EMAIL_FROM_NAME} <${EMAIL_FROM}>`
-      : EMAIL_FROM,
-    to: [to],
-    subject,
-    text,
-    html
-  };
-
-  if (attachments?.length) {
-    payload.attachments = attachments.map(attachment => ({
-      filename: attachment.filename,
-      content: attachment.content
-    }));
-  }
-
-  const response = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${RESEND_API_KEY}`,
-      'Content-Type': 'application/json',
-      Accept: 'application/json'
-    },
-    body: JSON.stringify(payload)
-  });
-
-  const responseText = await response.text();
-
-  let data;
-  try {
-    data = responseText ? JSON.parse(responseText) : {};
-  } catch {
-    data = { message: responseText };
-  }
-
-  if (!response.ok) {
-    throw new Error(
-      data?.message ||
-      data?.name ||
-      `Resend respondeu HTTP ${response.status}.`
-    );
-  }
-
-  return data;
-}
 
 const EVENT_NAME = 'Baile da Madrid 2.0';
 
@@ -461,7 +412,7 @@ async function mpRequest(url, options = {}) {
 function ticketPublicUrl(ticketId, token) {
   const base =
     PUBLIC_BASE_URL ||
-    'https://bailedamadrid.com.br';
+    '';
 
   return `${base}/api/tickets/scan?ticket=${encodeURIComponent(token)}`;
 }
@@ -597,23 +548,16 @@ async function fulfillLocked(orderId) {
           const tokenHash = hashToken(token);
 
           const qrPayload = ticketPublicUrl(ticketId, token);
-
-          // Usa explicitamente a implementação SERVER do pacote qrcode.
-          // A importação padrão pode ser redirecionada para a versão de
-          // navegador pelo bundler do Cloudflare, causando:
-          // "You need to specify a canvas element".
-          const qrBuffer = await QRCode.toBuffer(qrPayload, {
-            type: 'png',
+          const qrBase64 = await QRCode.toDataURL(qrPayload, {
             width: 700,
             margin: 2,
             errorCorrectionLevel: 'M'
           });
 
-          if (!qrBuffer || !qrBuffer.length) {
-            throw new Error(`Não foi possível gerar o QR Code do ingresso ${ticketId}.`);
-          }
-
-          const cleanBase64 = Buffer.from(qrBuffer).toString('base64');
+          const cleanBase64 = qrBase64.replace(
+            /^data:image\/png;base64,/,
+            ''
+          );
 
           await client.query(
             `
@@ -672,11 +616,6 @@ async function fulfillLocked(orderId) {
       return await getOrder(orderId);
     }
 
-    // Marca localmente quando o Resend aceitou o envio.
-    // Isso evita falso aviso caso o envio seja concluído, mas a gravação
-    // do status no banco falhe ou demore.
-    let emailSentNow = false;
-
     if (!freshOrder.emailSentAt) {
       try {
         await sendGmail({
@@ -721,25 +660,17 @@ async function fulfillLocked(orderId) {
           `
         });
 
-        // O Resend aceitou o e-mail. A partir daqui, falha ao persistir
-        // o status não deve transformar um envio bem-sucedido em aviso de erro.
-        emailSentNow = true;
-
-        try {
-          await db(
-            `
-              UPDATE orders
-              SET
-                email_sent_at=NOW(),
-                email_error=NULL,
-                updated_at=NOW()
-              WHERE order_id=$1
-            `,
-            [orderId]
-          );
-        } catch (persistError) {
-          console.error('E-mail enviado, mas não foi possível registrar o status:', persistError);
-        }
+        await db(
+          `
+            UPDATE orders
+            SET
+              email_sent_at=NOW(),
+              email_error=NULL,
+              updated_at=NOW()
+            WHERE order_id=$1
+          `,
+          [orderId]
+        );
       } catch (emailError) {
         console.error('Erro ao enviar ingresso:', emailError);
 
@@ -756,20 +687,7 @@ async function fulfillLocked(orderId) {
       }
     }
 
-    const finalOrder = await getOrder(orderId);
-
-    if (finalOrder) {
-      finalOrder.emailSentNow = emailSentNow;
-    }
-
-    // Se o envio acabou de ocorrer, informa sucesso imediatamente mesmo que
-    // a coluna email_sent_at ainda não esteja refletindo esse envio.
-    if (emailSentNow && finalOrder) {
-      finalOrder.emailSentAt = finalOrder.emailSentAt || new Date();
-      finalOrder.emailError = null;
-    }
-
-    return finalOrder;
+    return await getOrder(orderId);
   } catch (e) {
     try {
       await client.query('ROLLBACK');
@@ -1144,7 +1062,7 @@ app.get('/api/payment-status/:orderId', async (req, res) => {
       paymentId: finalOrder.paymentId,
       ticketsReady:
         ticketCount === totalTicketCount(finalOrder),
-      emailSent: Boolean(finalOrder.emailSentAt || finalOrder.emailSentNow),
+      emailSent: Boolean(finalOrder.emailSentAt),
       emailError: finalOrder.emailError || null
     });
   } catch (e) {
@@ -1300,26 +1218,18 @@ app.get('/api/tickets/qr/:ticketId.png', async (req, res) => {
    VALIDAÇÃO DO INGRESSO
    ======================================================== */
 
-function normalizeTicketToken(rawToken) {
-  const value = String(rawToken || '').trim();
-  if (!value) return '';
+async function consumeTicketToken(rawToken) {
+  const token = String(rawToken || '').trim();
 
-  // Aceita tanto o token puro quanto a URL completa do QR Code.
-  // Também aceita URL relativa, caso algum leitor de QR devolva
-  // somente /api/tickets/scan?ticket=...
-  try {
-    const url = new URL(value, 'https://bailedamadrid.com.br');
-    const ticket = url.searchParams.get('ticket');
-    if (ticket) return String(ticket).trim();
-  } catch {}
-
-  return value;
-}
-
-async function findTicketByToken(rawToken) {
-  const token = normalizeTicketToken(rawToken);
-
-  if (!token) return null;
+  if (!token) {
+    return {
+      status: 400,
+      body: {
+        valid: false,
+        error: 'QR Code inválido.'
+      }
+    };
+  }
 
   const h = hashToken(token);
 
@@ -1336,33 +1246,7 @@ async function findTicketByToken(rawToken) {
     [h]
   );
 
-  return r.rows[0] || null;
-}
-
-async function consumeTicketToken(rawToken) {
-  const token = normalizeTicketToken(rawToken);
-
-  if (!token) {
-    return {
-      status: 400,
-      body: {
-        valid: false,
-        error: 'QR Code inválido.'
-      }
-    };
-  }
-
-  if (!token) {
-    return {
-      status: 400,
-      body: {
-        valid: false,
-        error: 'QR Code inválido.'
-      }
-    };
-  }
-
-  const t = await findTicketByToken(token);
+  const t = r.rows[0];
 
   if (!t) {
     return {
@@ -1446,34 +1330,9 @@ async function consumeTicketToken(rawToken) {
 
 app.get('/api/tickets/scan', async (req, res) => {
   try {
-    const t = await findTicketByToken(req.query.ticket);
+    const result = await consumeTicketToken(req.query.ticket);
 
-    if (!t) {
-      return res.status(404).json({
-        valid: false,
-        error: 'Ingresso não encontrado.'
-      });
-    }
-
-    if (t.order_status !== 'approved') {
-      return res.status(400).json({
-        valid: false,
-        error: 'Pagamento não aprovado.'
-      });
-    }
-
-    return res.status(200).json({
-      valid: true,
-      used: Boolean(t.used_at),
-      message: t.used_at ? 'Ingresso já utilizado.' : 'Ingresso válido.',
-      ticket: {
-        ticketId: t.ticket_id,
-        batchName: t.batch_name,
-        buyerName: t.buyer_name,
-        buyerCpf: t.buyer_cpf,
-        usedAt: t.used_at
-      }
-    });
+    return res.status(result.status).json(result.body);
   } catch (e) {
     console.error('Erro na validação pública:', e);
 
@@ -1651,7 +1510,6 @@ app.get('/api/tickets/stats', requireAdmin, async (req, res) => {
         SELECT COUNT(*)::int AS n
         FROM orders
         WHERE status='approved'
-          AND order_id NOT LIKE 'TEST-%'
       `
     );
 
@@ -1660,11 +1518,9 @@ app.get('/api/tickets/stats', requireAdmin, async (req, res) => {
         SELECT
           COUNT(*)::int AS n,
           COUNT(*) FILTER(
-            WHERE t.used_at IS NOT NULL
+            WHERE used_at IS NOT NULL
           )::int AS used
-        FROM tickets t
-        JOIN orders o ON o.order_id=t.order_id
-        WHERE o.order_id NOT LIKE 'TEST-%'
+        FROM tickets
       `
     );
 
@@ -1715,7 +1571,6 @@ app.get('/api/admin/orders', requireAdmin, async (req, res) => {
             updated_at AS "updatedAt"
           FROM orders
           WHERE status = $1
-            AND order_id NOT LIKE 'TEST-%'
           ORDER BY created_at DESC
         `
         : `
@@ -1732,7 +1587,6 @@ app.get('/api/admin/orders', requireAdmin, async (req, res) => {
             created_at AS "createdAt",
             updated_at AS "updatedAt"
           FROM orders
-          WHERE order_id NOT LIKE 'TEST-%'
           ORDER BY created_at DESC
         `,
       status ? [status] : []
@@ -1791,7 +1645,6 @@ app.get('/api/admin/sales-by-batch', requireAdmin, async (req, res) => {
       FROM tickets t
       INNER JOIN orders o ON o.order_id = t.order_id
       WHERE o.status = 'approved'
-        AND o.order_id NOT LIKE 'TEST-%'
       GROUP BY t.batch_id, t.batch_name
       ORDER BY MIN(t.created_at) ASC
     `);
@@ -1903,7 +1756,7 @@ app.post('/api/admin/test-order', requireAdmin, async (req, res) => {
       test: true,
       orderId,
       status: fulfilled.status,
-      emailSent: Boolean(fulfilled.emailSentAt || fulfilled.emailSentNow),
+      emailSent: Boolean(fulfilled.emailSentAt),
       emailError: fulfilled.emailError || null,
       tickets: tickets.map(t => ({
         ticketId: t.ticket_id,
@@ -2028,7 +1881,7 @@ app.post('/api/admin/test-pix-payment', requireAdmin, async (req, res) => {
       orderId,
       paymentId,
       status: fulfilled.status,
-      emailSent: Boolean(fulfilled.emailSentAt || fulfilled.emailSentNow),
+      emailSent: Boolean(fulfilled.emailSentAt),
       emailError: fulfilled.emailError || null,
       tickets: tickets.map(t => ({
         ticketId: t.ticket_id,
@@ -2132,7 +1985,7 @@ app.post('/api/admin/test-card-payment', requireAdmin, async (req, res) => {
       simulatedPayment: 'card',
       paymentStatus: 'approved',
       orderId,
-      emailSent: Boolean(fulfilled.emailSentAt || fulfilled.emailSentNow),
+      emailSent: Boolean(fulfilled.emailSentAt),
       emailError: fulfilled.emailError || null,
       tickets: tickets.map(t => ({
         ticketId: t.ticket_id,
@@ -2225,45 +2078,6 @@ app.get(['/', '/index.html'], async (req, res) => {
     console.error('Erro ao servir index.html:', error);
     return res.status(500).send('Não foi possível carregar o site.');
   }
-});
-
-/* ========================================================
-   PAINEL ADMINISTRATIVO — COMPATIBILIDADE DE ROTAS
-   ========================================================
-   O painel atual usa /admin.html, mas esta rota também permite
-   abrir o painel por /admin. O HTML continua vindo do Cloudflare
-   Assets, sem alterar o visual ou a lógica do painel.
-*/
-
-async function serveAssetPage(req, res, assetPath) {
-  try {
-    const host = req.get('host') || 'localhost';
-    const response = await env.ASSETS.fetch(
-      new Request(`https://${host}/${assetPath}`)
-    );
-
-    if (!response.ok) {
-      return res.status(response.status).send('Página não encontrada.');
-    }
-
-    const html = await response.text();
-
-    return res.status(200).set(
-      'Content-Type',
-      response.headers.get('content-type') || 'text/html; charset=UTF-8'
-    ).send(html);
-  } catch (error) {
-    console.error(`Erro ao servir ${assetPath}:`, error);
-    return res.status(500).send('Não foi possível carregar a página.');
-  }
-}
-
-app.get(['/admin', '/admin/'], async (req, res) => {
-  return serveAssetPage(req, res, 'admin.html');
-});
-
-app.get('/admin.html', async (req, res) => {
-  return serveAssetPage(req, res, 'admin.html');
 });
 
 /* ========================================================
